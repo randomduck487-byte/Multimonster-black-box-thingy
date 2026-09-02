@@ -35,7 +35,18 @@ for i = 1, 20 do
     table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
 end
 
+-- Cached target list to prevent lagging out the game every frame
+local cachedTargets = {}
+local lastScanTime = 0
+local SCAN_INTERVAL = 0.2 -- Scans workspace 5 times a second instead of 60+ times
+
 local function getTargetMonsters()
+    local currentTime = tick()
+    if currentTime - lastScanTime < SCAN_INTERVAL then
+        return cachedTargets
+    end
+    lastScanTime = currentTime
+
     local targets = {}
     
     local function scanContainer(container)
@@ -75,6 +86,7 @@ local function getTargetMonsters()
     end
     
     scanContainer(Workspace)
+    cachedTargets = targets
     return targets
 end
 
@@ -90,7 +102,6 @@ local math_floor = math.floor
 local math_abs = math.abs
 local math_clamp = math.clamp
 local math_max = math.max
-local tick_func = tick
 
 local function spawnGlitchEffect(targetCenterPos, mainSize)
     local line = Instance.new("Frame")
@@ -226,23 +237,25 @@ connection = RunService.RenderStepped:Connect(function()
         local monster = targetData.model
         local targetPart = targetData.part
         
-        local cf = targetPart.CFrame
-        local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
+        if monster and monster.Parent and targetPart and targetPart.Parent then
+            local cf = targetPart.CFrame
+            local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
 
-        if onScreen then
-            local direction = (cf.Position - origin)
-            local raycastParams = RaycastParams.new()
-            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-            raycastParams.FilterDescendantsInstances = {player.Character, monster}
+            if onScreen then
+                local direction = (cf.Position - origin)
+                local raycastParams = RaycastParams.new()
+                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                raycastParams.FilterDescendantsInstances = {player.Character, monster}
 
-            local raycastResult = Workspace:Raycast(origin, direction, raycastParams)
+                local raycastResult = Workspace:Raycast(origin, direction, raycastParams)
 
-            if not raycastResult then
-                local distance = (origin - cf.Position).Magnitude
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestTarget = targetPart
-                    bestScreenPoint = screenPoint
+                if not raycastResult then
+                    local distance = (origin - cf.Position).Magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestTarget = targetPart
+                        bestScreenPoint = screenPoint
+                    end
                 end
             end
         end
@@ -255,7 +268,7 @@ connection = RunService.RenderStepped:Connect(function()
         mainSquare.Position = UDim2.new(0, bestScreenPoint.X - (mainSize / 2), 0, bestScreenPoint.Y - (mainSize / 2))
         mainSquare.Visible = true
 
-        local currentTime = tick_func()
+        local currentTime = tick()
 
         for _, sqData in ipairs(rapidSquares) do
             if currentTime >= sqData.nextUpdate then
