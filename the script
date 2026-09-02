@@ -35,14 +35,14 @@ for i = 1, 20 do
     table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
 end
 
-local cachedTargets = {}
+local cachedHitboxes = {}
 local lastScanTime = 0
 local SCAN_INTERVAL = 0.2
 
-local function getTargetMonsters()
+local function getTargetHitboxes()
     local currentTime = tick()
     if currentTime - lastScanTime < SCAN_INTERVAL then
-        return cachedTargets
+        return cachedHitboxes
     end
     lastScanTime = currentTime
 
@@ -72,23 +72,51 @@ local function getTargetMonsters()
                 end
                 
                 if targetPart then
-                    -- Ensure the target part has no collision
-                    targetPart.CanCollide = false
-                    table.insert(targets, {model = child, part = targetPart})
+                    -- Check transparency condition: If transparency is 0, don't show hitbox. If > 0 (up to 1), show it.
+                    if targetPart.Transparency > 0 then
+                        -- Check or create an 8-stud expanded invisible hitbox part around the model
+                        local hitboxName = "CustomRedactionHitbox"
+                        local hitbox = child:FindFirstChild(hitboxName)
+                        
+                        if not hitbox then
+                            hitbox = Instance.new("Part")
+                            hitbox.Name = hitboxName
+                            hitbox.Shape = Enum.PartType.Block
+                            hitbox.Anchored = false
+                            hitbox.CanCollide = false
+                            hitbox.Transparency = 1 -- Completely invisible (1)
+                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16) -- 8 studs further on all sides (+8 each direction = +16 total)
+                            hitbox.Parent = child
+                            
+                            -- Weld it to the target part so it follows the monster seamlessly
+                            local weld = Instance.new("WeldConstraint")
+                            weld.Part0 = targetPart
+                            weld.Part1 = hitbox
+                            weld.Parent = hitbox
+                            hitbox.CFrame = targetPart.CFrame
+                        else
+                            hitbox.Transparency = 1
+                            hitbox.CanCollide = false
+                        end
+                        
+                        table.insert(targets, {model = child, part = hitbox})
+                    end
                 end
             elseif child:IsA("Folder") then
                 scanContainer(child)
             elseif child:IsA("BasePart") then
                 if child.Name:find("Multi") or child.Name:find("M5225626565") then
-                    child.CanCollide = false
-                    table.insert(targets, {model = child, part = child})
+                    if child.Transparency > 0 then
+                        child.CanCollide = false
+                        table.insert(targets, {model = child, part = child})
+                    end
                 end
             end
         end
     end
     
     scanContainer(Workspace)
-    cachedTargets = targets
+    cachedHitboxes = targets
     return targets
 end
 
@@ -221,7 +249,7 @@ connection = RunService.RenderStepped:Connect(function()
         return
     end
 
-    local targets = getTargetMonsters()
+    local targets = getTargetHitboxes()
     if #targets == 0 then
         mainSquare.Visible = false
         for _, sqData in ipairs(rapidSquares) do
@@ -240,7 +268,6 @@ connection = RunService.RenderStepped:Connect(function()
         local targetPart = targetData.part
         
         if monster and monster.Parent and targetPart and targetPart.Parent then
-            targetPart.CanCollide = false
             local cf = targetPart.CFrame
             local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
 
@@ -277,11 +304,8 @@ connection = RunService.RenderStepped:Connect(function()
 
                 if hitValid then
                     local distance = (origin - cf.Position).Magnitude
-                    local extraStudsBuffer = math_random(4, 8)
-                    local effectiveDistance = math.max(0, distance - extraStudsBuffer)
-                    
-                    if effectiveDistance < closestDistance then
-                        closestDistance = effectiveDistance
+                    if distance < closestDistance then
+                        closestDistance = distance
                         closestTarget = targetPart
                         bestScreenPoint = screenPoint
                     end
