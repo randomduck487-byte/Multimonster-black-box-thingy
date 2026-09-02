@@ -72,10 +72,9 @@ local function getTargetHitboxes()
                 end
                 
                 if targetPart then
-                    -- Check transparency condition: If transparency is 0, don't show hitbox. If > 0 (up to 1), show it.
+                    -- If target part transparency is 0, don't show hitbox. If > 0, activate.
                     if targetPart.Transparency > 0 then
-                        -- Check or create an 8-stud expanded invisible hitbox part around the model
-                        local hitboxName = "CustomRedactionHitbox"
+                        local hitboxName = "2Hitbox"
                         local hitbox = child:FindFirstChild(hitboxName)
                         
                         if not hitbox then
@@ -84,11 +83,11 @@ local function getTargetHitboxes()
                             hitbox.Shape = Enum.PartType.Block
                             hitbox.Anchored = false
                             hitbox.CanCollide = false
-                            hitbox.Transparency = 1 -- Completely invisible (1)
-                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16) -- 8 studs further on all sides (+8 each direction = +16 total)
+                            hitbox.Transparency = 1 
+                            -- 8 studs bigger on each side means adding 16 studs total to each dimension (8 on left/right, etc.)
+                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16)
                             hitbox.Parent = child
                             
-                            -- Weld it to the target part so it follows the monster seamlessly
                             local weld = Instance.new("WeldConstraint")
                             weld.Part0 = targetPart
                             weld.Part1 = hitbox
@@ -97,6 +96,7 @@ local function getTargetHitboxes()
                         else
                             hitbox.Transparency = 1
                             hitbox.CanCollide = false
+                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16)
                         end
                         
                         table.insert(targets, {model = child, part = hitbox})
