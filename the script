@@ -35,10 +35,9 @@ for i = 1, 20 do
     table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
 end
 
--- Cached target list to prevent lagging out the game every frame
 local cachedTargets = {}
 local lastScanTime = 0
-local SCAN_INTERVAL = 0.2 -- Scans workspace 5 times a second instead of 60+ times
+local SCAN_INTERVAL = 0.2
 
 local function getTargetMonsters()
     local currentTime = tick()
@@ -73,12 +72,15 @@ local function getTargetMonsters()
                 end
                 
                 if targetPart then
+                    -- Ensure the target part has no collision
+                    targetPart.CanCollide = false
                     table.insert(targets, {model = child, part = targetPart})
                 end
             elseif child:IsA("Folder") then
                 scanContainer(child)
             elseif child:IsA("BasePart") then
                 if child.Name:find("Multi") or child.Name:find("M5225626565") then
+                    child.CanCollide = false
                     table.insert(targets, {model = child, part = child})
                 end
             end
@@ -238,6 +240,7 @@ connection = RunService.RenderStepped:Connect(function()
         local targetPart = targetData.part
         
         if monster and monster.Parent and targetPart and targetPart.Parent then
+            targetPart.CanCollide = false
             local cf = targetPart.CFrame
             local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
 
@@ -247,12 +250,38 @@ connection = RunService.RenderStepped:Connect(function()
                 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
                 raycastParams.FilterDescendantsInstances = {player.Character, monster}
 
-                local raycastResult = Workspace:Raycast(origin, direction, raycastParams)
+                local hitValid = false
+                local currentOrigin = origin
+                local remainingDirection = direction
+                
+                for i = 1, 5 do
+                    local raycastResult = Workspace:Raycast(currentOrigin, remainingDirection, raycastParams)
+                    if not raycastResult then
+                        hitValid = true
+                        break
+                    else
+                        local hitPart = raycastResult.Instance
+                        if hitPart and hitPart.Transparency <= 0.9 then
+                            hitValid = false
+                            break
+                        else
+                            currentOrigin = raycastResult.Position + (remainingDirection.Unit * 0.1)
+                            remainingDirection = direction - (currentOrigin - origin)
+                            if remainingDirection.Magnitude <= 0 then
+                                hitValid = true
+                                break
+                            end
+                        end
+                    end
+                end
 
-                if not raycastResult then
+                if hitValid then
                     local distance = (origin - cf.Position).Magnitude
-                    if distance < closestDistance then
-                        closestDistance = distance
+                    local extraStudsBuffer = math_random(4, 8)
+                    local effectiveDistance = math.max(0, distance - extraStudsBuffer)
+                    
+                    if effectiveDistance < closestDistance then
+                        closestDistance = effectiveDistance
                         closestTarget = targetPart
                         bestScreenPoint = screenPoint
                     end
