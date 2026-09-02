@@ -1,0 +1,290 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+
+if player.PlayerGui:FindFirstChild("FaceRedactionGui") then
+    player.PlayerGui.FaceRedactionGui:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FaceRedactionGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local mainSquare = Instance.new("Frame")
+mainSquare.Name = "MainRedactionBox"
+mainSquare.BackgroundColor3 = Color3.new(0, 0, 0)
+mainSquare.BorderSizePixel = 0
+mainSquare.Visible = false
+mainSquare.Parent = screenGui
+
+local rapidSquares = {}
+for i = 1, 20 do
+    local sq = Instance.new("Frame")
+    sq.Name = "RapidSquare" .. i
+    sq.BackgroundColor3 = Color3.new(0, 0, 0)
+    sq.BackgroundTransparency = 0
+    sq.BorderSizePixel = 0
+    sq.Visible = false
+    sq.Parent = screenGui
+    
+    table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
+end
+
+local function getTargetMonsters()
+    local targets = {}
+    
+    local function scanContainer(container)
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Model") then
+                local targetPart = nil
+                
+                if child.PrimaryPart then
+                    local ppName = child.PrimaryPart.Name
+                    if ppName:find("Multi") or ppName:find("M5225626565") then
+                        targetPart = child.PrimaryPart
+                    end
+                end
+                
+                if not targetPart then
+                    for _, descendant in ipairs(child:GetDescendants()) do
+                        if descendant:IsA("BasePart") then
+                            if descendant.Name:find("Multi") or descendant.Name:find("M5225626565") then
+                                targetPart = descendant
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                if targetPart then
+                    table.insert(targets, {model = child, part = targetPart})
+                end
+            elseif child:IsA("Folder") then
+                scanContainer(child)
+            elseif child:IsA("BasePart") then
+                if child.Name:find("Multi") or child.Name:find("M5225626565") then
+                    table.insert(targets, {model = child, part = child})
+                end
+            end
+        end
+    end
+    
+    scanContainer(Workspace)
+    return targets
+end
+
+local randomColors = {
+    Color3.fromRGB(255, 255, 0),
+    Color3.fromRGB(0, 100, 255),
+    Color3.fromRGB(255, 100, 0),
+    Color3.fromRGB(0, 255, 100)
+}
+
+local math_random = math.random
+local math_floor = math.floor
+local math_abs = math.abs
+local math_clamp = math.clamp
+local math_max = math.max
+local tick_func = tick
+
+local function spawnGlitchEffect(targetCenterPos, mainSize)
+    local line = Instance.new("Frame")
+    local vpSize = camera.ViewportSize
+    local chosenColor = randomColors[math_random(1, #randomColors)]
+    
+    local width, height, posX, posY
+    local isTransparentBox = false
+    
+    local isLine = (math_random(1, 2) == 1)
+    local isBox = (math_random(1, 2) == 1)
+    local isSquare = (math_random(1, 2) == 1)
+    
+    if isLine then
+        if math_random(1, 4) == 1 then
+            width = vpSize.X
+        else
+            width = math_random(80, math_floor(vpSize.X * 0.8))
+        end
+        height = 1
+        posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
+        posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
+        
+        line.BackgroundColor3 = chosenColor
+        line.BackgroundTransparency = 0.2
+        line.BorderSizePixel = 0
+        
+    elseif isBox then
+        width = math_random(30, 400)
+        height = math_random(10, 150)
+        posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
+        posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
+        
+        isTransparentBox = true
+        line.BackgroundColor3 = Color3.new(0, 0, 0)
+        line.BackgroundTransparency = 0.3
+        line.BorderSizePixel = 0
+        
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = chosenColor
+        stroke.Thickness = 1.5
+        stroke.Parent = line
+        
+    elseif isSquare then
+        local boxSize = math_random(25, 65)
+        width = boxSize
+        height = boxSize
+        
+        local maxOffset = math_clamp(mainSize * 1.5, 100, 350)
+        local offsetX = math_random(-maxOffset, maxOffset)
+        local offsetY = math_random(-maxOffset, maxOffset)
+        
+        if math_abs(offsetX) < (mainSize / 2) then
+            offsetX = offsetX < 0 and -(mainSize / 2 + width) or (mainSize / 2)
+        end
+        if math_abs(offsetY) < (mainSize / 2) then
+            offsetY = offsetY < 0 and -(mainSize / 2 + height) or (mainSize / 2)
+        end
+        
+        posX = targetCenterPos.X + offsetX - (width / 2)
+        posY = targetCenterPos.Y + offsetY - (height / 2)
+        
+        isTransparentBox = true
+        line.BackgroundColor3 = Color3.new(0, 0, 0)
+        line.BackgroundTransparency = 0.3
+        line.BorderSizePixel = 0
+        
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = chosenColor
+        stroke.Thickness = 1.5
+        stroke.Parent = line
+    else
+        width = math_random(80, math_floor(vpSize.X * 0.8))
+        height = 1
+        posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
+        posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
+        
+        line.BackgroundColor3 = chosenColor
+        line.BackgroundTransparency = 0.2
+        line.BorderSizePixel = 0
+    end
+    
+    line.Size = UDim2.new(0, width, 0, height)
+    line.Position = UDim2.new(0, posX, 0, posY)
+    line.Parent = screenGui
+    
+    task.spawn(function()
+        local duration = 10.0
+        local elapsed = 0
+        while elapsed < duration and line and line.Parent do
+            local dt = RunService.RenderStepped:Wait()
+            elapsed = elapsed + dt
+            if elapsed > 9.0 then
+                local fadeProgress = (elapsed - 9.0) / 1.0
+                if isTransparentBox then
+                    line.BackgroundTransparency = 0.3 + (0.7 * fadeProgress)
+                else
+                    line.BackgroundTransparency = 0.2 + (0.8 * fadeProgress)
+                end
+            end
+            task.wait()
+        end
+        if line then
+            line:Destroy()
+        end
+    end)
+end
+
+local lastGlitchTick = 0
+
+local connection
+connection = RunService.RenderStepped:Connect(function()
+    if not screenGui or not screenGui.Parent then
+        if connection then connection:Disconnect() end
+        return
+    end
+
+    local targets = getTargetMonsters()
+    if #targets == 0 then
+        mainSquare.Visible = false
+        for _, sqData in ipairs(rapidSquares) do
+            sqData.frame.Visible = false
+        end
+        return
+    end
+
+    local closestTarget = nil
+    local closestDistance = math.huge
+    local bestScreenPoint = nil
+    local origin = camera.CFrame.Position
+
+    for _, targetData in ipairs(targets) do
+        local monster = targetData.model
+        local targetPart = targetData.part
+        
+        local cf = targetPart.CFrame
+        local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
+
+        if onScreen then
+            local direction = (cf.Position - origin)
+            local raycastParams = RaycastParams.new()
+            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+            raycastParams.FilterDescendantsInstances = {player.Character, monster}
+
+            local raycastResult = Workspace:Raycast(origin, direction, raycastParams)
+
+            if not raycastResult then
+                local distance = (origin - cf.Position).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestTarget = targetPart
+                    bestScreenPoint = screenPoint
+                end
+            end
+        end
+    end
+
+    if closestTarget and bestScreenPoint then
+        local mainSize = math_clamp(10000 / closestDistance, 100, 1000)
+
+        mainSquare.Size = UDim2.new(0, mainSize, 0, mainSize)
+        mainSquare.Position = UDim2.new(0, bestScreenPoint.X - (mainSize / 2), 0, bestScreenPoint.Y - (mainSize / 2))
+        mainSquare.Visible = true
+
+        local currentTime = tick_func()
+
+        for _, sqData in ipairs(rapidSquares) do
+            if currentTime >= sqData.nextUpdate then
+                sqData.nextUpdate = currentTime + math_random(30, 100) / 1000
+                sqData.frame.Size = UDim2.new(0, 20, 0, 20)
+
+                local minOffset = mainSize * 0.4
+                local maxOffset = mainSize * 1.4
+                local angle = math_random() * math.pi * 2
+                local dist = math_random(math_floor(minOffset), math_floor(maxOffset))
+
+                local posX = bestScreenPoint.X + math.cos(angle) * dist - 10
+                local posY = bestScreenPoint.Y + math.sin(angle) * dist - 10
+
+                sqData.frame.Position = UDim2.new(0, posX, 0, posY)
+                sqData.frame.Visible = true
+            end
+        end
+
+        if currentTime - lastGlitchTick > 0.15 then
+            lastGlitchTick = currentTime
+            for i = 1, math_random(2, 4) do
+                spawnGlitchEffect(bestScreenPoint, mainSize)
+            end
+        end
+    else
+        mainSquare.Visible = false
+        for _, sqData in ipairs(rapidSquares) do
+            sqData.frame.Visible = false
+        end
+    end
+end)
