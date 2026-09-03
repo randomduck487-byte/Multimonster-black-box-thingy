@@ -35,14 +35,14 @@ for i = 1, 20 do
     table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
 end
 
-local cachedHitboxes = {}
+local cachedTargets = {}
 local lastScanTime = 0
 local SCAN_INTERVAL = 0.2
 
-local function getTargetHitboxes()
+local function getTargetMonsters()
     local currentTime = tick()
     if currentTime - lastScanTime < SCAN_INTERVAL then
-        return cachedHitboxes
+        return cachedTargets
     end
     lastScanTime = currentTime
 
@@ -72,51 +72,22 @@ local function getTargetHitboxes()
                 end
                 
                 if targetPart then
-                    -- If target part transparency is 0, don't show hitbox. If > 0, activate.
-                    if targetPart.Transparency > 0 then
-                        local hitboxName = "2Hitbox"
-                        local hitbox = child:FindFirstChild(hitboxName)
-                        
-                        if not hitbox then
-                            hitbox = Instance.new("Part")
-                            hitbox.Name = hitboxName
-                            hitbox.Shape = Enum.PartType.Block
-                            hitbox.Anchored = false
-                            hitbox.CanCollide = false
-                            hitbox.Transparency = 1 
-                            -- 8 studs bigger on each side means adding 16 studs total to each dimension (8 on left/right, etc.)
-                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16)
-                            hitbox.Parent = child
-                            
-                            local weld = Instance.new("WeldConstraint")
-                            weld.Part0 = targetPart
-                            weld.Part1 = hitbox
-                            weld.Parent = hitbox
-                            hitbox.CFrame = targetPart.CFrame
-                        else
-                            hitbox.Transparency = 1
-                            hitbox.CanCollide = false
-                            hitbox.Size = targetPart.Size + Vector3.new(16, 16, 16)
-                        end
-                        
-                        table.insert(targets, {model = child, part = hitbox})
-                    end
+                    targetPart.CanCollide = false
+                    table.insert(targets, {model = child, part = targetPart})
                 end
             elseif child:IsA("Folder") then
                 scanContainer(child)
             elseif child:IsA("BasePart") then
                 if child.Name:find("Multi") or child.Name:find("M5225626565") then
-                    if child.Transparency > 0 then
-                        child.CanCollide = false
-                        table.insert(targets, {model = child, part = child})
-                    end
+                    child.CanCollide = false
+                    table.insert(targets, {model = child, part = child})
                 end
             end
         end
     end
     
     scanContainer(Workspace)
-    cachedHitboxes = targets
+    cachedTargets = targets
     return targets
 end
 
@@ -249,7 +220,7 @@ connection = RunService.RenderStepped:Connect(function()
         return
     end
 
-    local targets = getTargetHitboxes()
+    local targets = getTargetMonsters()
     if #targets == 0 then
         mainSquare.Visible = false
         for _, sqData in ipairs(rapidSquares) do
@@ -268,6 +239,7 @@ connection = RunService.RenderStepped:Connect(function()
         local targetPart = targetData.part
         
         if monster and monster.Parent and targetPart and targetPart.Parent then
+            targetPart.CanCollide = false
             local cf = targetPart.CFrame
             local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
 
@@ -280,6 +252,7 @@ connection = RunService.RenderStepped:Connect(function()
                 local hitValid = false
                 local currentOrigin = origin
                 local remainingDirection = direction
+                local blockedByWallTooClose = false
                 
                 for i = 1, 5 do
                     local raycastResult = Workspace:Raycast(currentOrigin, remainingDirection, raycastParams)
@@ -289,6 +262,12 @@ connection = RunService.RenderStepped:Connect(function()
                     else
                         local hitPart = raycastResult.Instance
                         if hitPart and hitPart.Transparency <= 0.9 then
+                            -- Check if the wall blocking the view is within 4 studs of the entity/hitbox
+                            local distToHit = (raycastResult.Position - cf.Position).Magnitude
+                            if distToHit <= 4 then
+                                blockedByWallTooClose = true
+                            end
+                            
                             hitValid = false
                             break
                         else
@@ -302,7 +281,7 @@ connection = RunService.RenderStepped:Connect(function()
                     end
                 end
 
-                if hitValid then
+                if hitValid and not blockedByWallTooClose then
                     local distance = (origin - cf.Position).Magnitude
                     if distance < closestDistance then
                         closestDistance = distance
