@@ -30,7 +30,7 @@ secondarySquare.BorderSizePixel = 0
 secondarySquare.Visible = false
 secondarySquare.Parent = screenGui
 
-local RAPID_COUNT = 10
+local RAPID_COUNT = 12 -- Increased count for denser effects
 local rapidSquares = {}
 for i = 1, RAPID_COUNT do
     local sq = Instance.new("Frame")
@@ -44,86 +44,51 @@ for i = 1, RAPID_COUNT do
     table.insert(rapidSquares, {frame = sq, nextUpdate = 0})
 end
 
-local cachedTargets = {}
-local lastScanTime = 0
-local SCAN_INTERVAL = 0.5
+local activeMonsters = {}
 local redactedMonsters = {}
 
--- Fast Local Math References
-local math_random = math.random
-local math_floor = math.floor
-local math_clamp = math.clamp
-local math_max = math.max
-local math_cos = math.cos
-local math_sin = math.sin
-local os_clock = os.clock
-
-local function getTargetMonsters()
-    local currentTime = os_clock()
-    if currentTime - lastScanTime < SCAN_INTERVAL then
-        return cachedTargets
-    end
-    lastScanTime = currentTime
-
-    local targets = {}
-    
-    local function scanContainer(container)
-        for _, child in ipairs(container:GetChildren()) do
-            if child:IsA("Model") then
-                local targetPart = child.PrimaryPart
-                
-                if targetPart then
-                    local ppName = targetPart.Name
-                    if not (ppName:find("Multi") or ppName:find("M5225626565")) then
-                        targetPart = nil
-                    end
-                end
-                
-                if not targetPart then
-                    local descendants = child:GetDescendants()
-                    for i = 1, #descendants do
-                        local descendant = descendants[i]
-                        if descendant:IsA("BasePart") then
-                            local dName = descendant.Name
-                            if dName:find("Multi") or dName:find("M5225626565") then
-                                targetPart = descendant
-                                break
-                            end
-                        end
-                    end
-                end
-                
-                if targetPart then
-                    targetPart.CanCollide = false
-                    targets[#targets + 1] = {model = child, part = targetPart}
-                    
-                    if not redactedMonsters[child] then
-                        redactedMonsters[child] = true
-                        for _, p in ipairs(child:GetDescendants()) do
-                            if p:IsA("BasePart") then
-                                p.Color = Color3.new(0, 0, 0)
-                                p.Material = Enum.Material.SmoothPlastic
-                            end
-                        end
-                    end
-                end
-            elseif child:IsA("Folder") then
-                scanContainer(child)
-            elseif child:IsA("BasePart") then
-                local cName = child.Name
-                if cName:find("Multi") or cName:find("M5225626565") then
-                    child.CanCollide = false
-                    targets[#targets + 1] = {model = child, part = child}
-                    child.Color = Color3.new(0, 0, 0)
-                    child.Material = Enum.Material.SmoothPlastic
-                end
-            end
+local function setupMonsterPart(part)
+    if not part:IsA("BasePart") then return end
+    local pName = part.Name
+    if pName:find("Multi") or pName:find("M5225626565") then
+        part.CanCollide = false
+        if not redactedMonsters[part] then
+            redactedMonsters[part] = true
+            part.Color = Color3.new(0, 0, 0)
+            part.Material = Enum.Material.SmoothPlastic
         end
+        local targetModel = part
+        if part.Parent and part.Parent:IsA("Model") then
+            targetModel = part.Parent
+        end
+        activeMonsters[part] = {model = targetModel, part = part}
     end
-    
-    scanContainer(Workspace)
-    cachedTargets = targets
-    return targets
+end
+
+local currentRooms = Workspace:FindFirstChild("CurrentRooms")
+
+local function monitorContainer(container)
+    for _, desc in ipairs(container:GetDescendants()) do
+        setupMonsterPart(desc)
+    end
+    container.DescendantAdded:Connect(function(desc)
+        setupMonsterPart(desc)
+    end)
+end
+
+if currentRooms then
+    monitorContainer(currentRooms)
+    currentRooms.ChildAdded:Connect(function(room)
+        monitorContainer(room)
+    end)
+end
+
+Workspace.DescendantAdded:Connect(function(desc)
+    setupMonsterPart(desc)
+end)
+
+for _, desc in ipairs(Workspace:GetDescendants()) do
+    setupMonsterPart(desc)
 end
 
 local randomColors = {
@@ -132,6 +97,14 @@ local randomColors = {
     Color3.fromRGB(255, 100, 0),
     Color3.fromRGB(0, 255, 100)
 }
+
+local math_random = math.random
+local math_floor = math.floor
+local math_clamp = math.clamp
+local math_max = math.max
+local math_cos = math.cos
+local math_sin = math.sin
+local os_clock = os.clock
 
 local function spawnGlitchEffect(targetCenterPos, mainSize)
     local line = Instance.new("Frame")
@@ -183,13 +156,14 @@ local function spawnGlitchEffect(targetCenterPos, mainSize)
     line.Position = UDim2.new(0, posX, 0, posY)
     line.Parent = screenGui
     
+    -- Increased lifetime (stays longer: 3.5 seconds total, slow fade out over last 1.5 seconds)
     task.spawn(function()
         local elapsed = 0
-        while elapsed < 2.0 and line and line.Parent do
+        while elapsed < 3.5 and line and line.Parent do
             local dt = RunService.RenderStepped:Wait()
             elapsed = elapsed + dt
-            if elapsed > 1.5 then
-                line.BackgroundTransparency = 0.3 + (0.7 * ((elapsed - 1.5) / 0.5))
+            if elapsed > 2.0 then
+                line.BackgroundTransparency = 0.3 + (0.7 * ((elapsed - 2.0) / 1.5))
             end
         end
         if line then line:Destroy() end
@@ -219,7 +193,7 @@ local function setBodyRedacted(redacted, char)
                 local orig = originalAppearances[part]
                 if orig then
                     part.Color = orig.color
-                    part.material = orig.material
+                    part.Material = orig.material
                     part.Transparency = orig.transparency
                 end
             end
@@ -255,6 +229,12 @@ local lastGlitchTick = 0
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
+local lastUpdateCheck = 0
+local cachedClosestTarget = nil
+local cachedBestScreenPoint = nil
+local cachedMainSize = 100
+local cachedCanSeePlayer = false
+
 local connection
 connection = RunService.RenderStepped:Connect(function()
     if not screenGui or not screenGui.Parent then
@@ -262,88 +242,52 @@ connection = RunService.RenderStepped:Connect(function()
         return
     end
 
-    local targets = getTargetMonsters()
+    local currentTime = os_clock()
     local playerChar = player.Character
     local playerHrp = playerChar and playerChar:FindFirstChild("HumanoidRootPart")
 
-    if #targets == 0 or not playerHrp then
+    if not playerHrp then
         mainSquare.Visible = false
         secondarySquare.Visible = false
-        for i = 1, RAPID_COUNT do
-            rapidSquares[i].frame.Visible = false
-        end
-        if isBodyRedacted then
-            setBodyRedacted(false, playerChar)
-        end
+        for i = 1, RAPID_COUNT do rapidSquares[i].frame.Visible = false end
+        if isBodyRedacted then setBodyRedacted(false, playerChar) end
         return
     end
 
-    local closestTarget = nil
-    local closestDistance = math.huge
-    local bestScreenPoint = nil
-    local origin = camera.CFrame.Position
-    local monsterCanSeePlayer = false
-
-    for i = 1, #targets do
-        local targetData = targets[i]
-        local monster = targetData.model
-        local targetPart = targetData.part
+    if currentTime - lastUpdateCheck > 0.033 then
+        lastUpdateCheck = currentTime
+        cachedClosestTarget = nil
+        cachedBestScreenPoint = nil
+        cachedCanSeePlayer = false
         
-        if monster and monster.Parent and targetPart and targetPart.Parent then
-            local cf = targetPart.CFrame
-            local distToPlayer = (cf.Position - playerHrp.Position).Magnitude
+        local closestDistance = math.huge
+        local origin = camera.CFrame.Position
 
-            if distToPlayer <= 50 then
-                local monsterToPlayerDir = (playerHrp.Position - cf.Position)
-                local checkParams = RaycastParams.new()
-                checkParams.FilterType = Enum.RaycastFilterType.Exclude
-                checkParams.FilterDescendantsInstances = {monster, playerChar}
-                
-                if not Workspace:Raycast(cf.Position, monsterToPlayerDir, checkParams) then
-                    monsterCanSeePlayer = true
-                end
-            end
+        for _, targetData in pairs(activeMonsters) do
+            local monster = targetData.model
+            local targetPart = targetData.part
+            
+            if monster and monster.Parent and targetPart and targetPart.Parent then
+                local cf = targetPart.CFrame
+                local distToPlayer = (cf.Position - playerHrp.Position).Magnitude
 
-            local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
-            if onScreen then
-                local direction = (cf.Position - origin)
-                raycastParams.FilterDescendantsInstances = {playerChar, monster}
-
-                local hitValid = false
-                local currentOrigin = origin
-                local remainingDirection = direction
-                local blockedByWallTooClose = false
-                
-                for r = 1, 3 do
-                    local raycastResult = Workspace:Raycast(currentOrigin, remainingDirection, raycastParams)
-                    if not raycastResult then
-                        hitValid = true
-                        break
-                    else
-                        local hitPart = raycastResult.Instance
-                        if hitPart and hitPart.Transparency <= 0.9 then
-                            if (raycastResult.Position - cf.Position).Magnitude <= 4 then
-                                blockedByWallTooClose = true
-                            end
-                            hitValid = false
-                            break
-                        else
-                            currentOrigin = raycastResult.Position + (remainingDirection.Unit * 0.1)
-                            remainingDirection = direction - (currentOrigin - origin)
-                            if remainingDirection.Magnitude <= 0 then
-                                hitValid = true
-                                break
-                            end
-                        end
+                if distToPlayer <= 50 then
+                    local monsterToPlayerDir = (playerHrp.Position - cf.Position)
+                    raycastParams.FilterDescendantsInstances = {monster, playerChar}
+                    
+                    if not Workspace:Raycast(cf.Position, monsterToPlayerDir, raycastParams) then
+                        cachedCanSeePlayer = true
                     end
                 end
 
-                if hitValid and not blockedByWallTooClose then
+                local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
+                if onScreen then
                     local distance = (origin - cf.Position).Magnitude
                     if distance < closestDistance then
                         closestDistance = distance
-                        closestTarget = targetPart
-                        bestScreenPoint = screenPoint
+                        cachedClosestTarget = targetPart
+                        cachedBestScreenPoint = screenPoint
+                        cachedMainSize = math_clamp(10000 / distance, 100, 1000)
                     end
                 end
             end
@@ -352,45 +296,41 @@ connection = RunService.RenderStepped:Connect(function()
 
     local activeBoxesCount = 0
 
-    -- Multi-monster redaction box
-    if closestTarget and bestScreenPoint then
+    if cachedClosestTarget and cachedBestScreenPoint then
         activeBoxesCount = activeBoxesCount + 1
-        local mainSize = math_clamp(10000 / closestDistance, 100, 1000)
 
-        mainSquare.Size = UDim2.new(0, mainSize, 0, mainSize)
-        mainSquare.Position = UDim2.new(0, bestScreenPoint.X - (mainSize / 2), 0, bestScreenPoint.Y - (mainSize / 2))
+        mainSquare.Size = UDim2.new(0, cachedMainSize, 0, cachedMainSize)
+        mainSquare.Position = UDim2.new(0, cachedBestScreenPoint.X - (cachedMainSize / 2), 0, cachedBestScreenPoint.Y - (cachedMainSize / 2))
         mainSquare.Visible = true
 
-        local currentTime = os_clock()
         for i = 1, RAPID_COUNT do
             local sqData = rapidSquares[i]
+            -- Refreshed much more often (shorter cooldown per element)
             if currentTime >= sqData.nextUpdate then
-                sqData.nextUpdate = currentTime + 0.05
+                sqData.nextUpdate = currentTime + 0.025
                 sqData.frame.Size = UDim2.new(0, 20, 0, 20)
 
-                local minOffset = mainSize * 0.4
-                local maxOffset = mainSize * 1.4
+                local minOffset = cachedMainSize * 0.4
+                local maxOffset = cachedMainSize * 1.4
                 local angle = math_random() * 6.28318
                 local dist = math_random(math_floor(minOffset), math_floor(maxOffset))
 
-                sqData.frame.Position = UDim2.new(0, bestScreenPoint.X + math_cos(angle) * dist - 10, 0, bestScreenPoint.Y + math_sin(angle) * dist - 10)
+                sqData.frame.Position = UDim2.new(0, cachedBestScreenPoint.X + math_cos(angle) * dist - 10, 0, cachedBestScreenPoint.Y + math_sin(angle) * dist - 10)
                 sqData.frame.Visible = true
             end
         end
 
-        if currentTime - lastGlitchTick > 0.25 then
+        -- Spawns glitch background effects much more frequently
+        if currentTime - lastGlitchTick > 0.1 then
             lastGlitchTick = currentTime
-            spawnGlitchEffect(bestScreenPoint, mainSize)
+            spawnGlitchEffect(cachedBestScreenPoint, cachedMainSize)
         end
     else
         mainSquare.Visible = false
-        for i = 1, RAPID_COUNT do
-            rapidSquares[i].frame.Visible = false
-        end
+        for i = 1, RAPID_COUNT do rapidSquares[i].frame.Visible = false end
     end
 
-    -- Player body third-person redaction box
-    if monsterCanSeePlayer then
+    if cachedCanSeePlayer then
         setBodyRedacted(true, playerChar)
         
         if (camera.CFrame.Position - playerHrp.Position).Magnitude > 4 then
@@ -417,8 +357,6 @@ connection = RunService.RenderStepped:Connect(function()
     end
 
     if activeBoxesCount == 0 then
-        for i = 1, RAPID_COUNT do
-            rapidSquares[i].frame.Visible = false
-        end
+        for i = 1, RAPID_COUNT do rapidSquares[i].frame.Visible = false end
     end
 end)
