@@ -5,6 +5,7 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
+-- Clear old UI if it exists
 if player.PlayerGui:FindFirstChild("FaceRedactionGui") then
     player.PlayerGui.FaceRedactionGui:Destroy()
 end
@@ -22,8 +23,16 @@ mainSquare.BorderSizePixel = 0
 mainSquare.Visible = false
 mainSquare.Parent = screenGui
 
+local secondarySquare = Instance.new("Frame")
+secondarySquare.Name = "SecondaryRedactionBox"
+secondarySquare.BackgroundColor3 = Color3.new(0, 0, 0)
+secondarySquare.BorderSizePixel = 0
+secondarySquare.Visible = false
+secondarySquare.Parent = screenGui
+
+local RAPID_COUNT = 10
 local rapidSquares = {}
-for i = 1, 20 do
+for i = 1, RAPID_COUNT do
     local sq = Instance.new("Frame")
     sq.Name = "RapidSquare" .. i
     sq.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -37,10 +46,20 @@ end
 
 local cachedTargets = {}
 local lastScanTime = 0
-local SCAN_INTERVAL = 0.2
+local SCAN_INTERVAL = 0.5
+local redactedMonsters = {}
+
+-- Fast Local Math References
+local math_random = math.random
+local math_floor = math.floor
+local math_clamp = math.clamp
+local math_max = math.max
+local math_cos = math.cos
+local math_sin = math.sin
+local os_clock = os.clock
 
 local function getTargetMonsters()
-    local currentTime = tick()
+    local currentTime = os_clock()
     if currentTime - lastScanTime < SCAN_INTERVAL then
         return cachedTargets
     end
@@ -51,19 +70,22 @@ local function getTargetMonsters()
     local function scanContainer(container)
         for _, child in ipairs(container:GetChildren()) do
             if child:IsA("Model") then
-                local targetPart = nil
+                local targetPart = child.PrimaryPart
                 
-                if child.PrimaryPart then
-                    local ppName = child.PrimaryPart.Name
-                    if ppName:find("Multi") or ppName:find("M5225626565") then
-                        targetPart = child.PrimaryPart
+                if targetPart then
+                    local ppName = targetPart.Name
+                    if not (ppName:find("Multi") or ppName:find("M5225626565")) then
+                        targetPart = nil
                     end
                 end
                 
                 if not targetPart then
-                    for _, descendant in ipairs(child:GetDescendants()) do
+                    local descendants = child:GetDescendants()
+                    for i = 1, #descendants do
+                        local descendant = descendants[i]
                         if descendant:IsA("BasePart") then
-                            if descendant.Name:find("Multi") or descendant.Name:find("M5225626565") then
+                            local dName = descendant.Name
+                            if dName:find("Multi") or dName:find("M5225626565") then
                                 targetPart = descendant
                                 break
                             end
@@ -73,14 +95,27 @@ local function getTargetMonsters()
                 
                 if targetPart then
                     targetPart.CanCollide = false
-                    table.insert(targets, {model = child, part = targetPart})
+                    targets[#targets + 1] = {model = child, part = targetPart}
+                    
+                    if not redactedMonsters[child] then
+                        redactedMonsters[child] = true
+                        for _, p in ipairs(child:GetDescendants()) do
+                            if p:IsA("BasePart") then
+                                p.Color = Color3.new(0, 0, 0)
+                                p.Material = Enum.Material.SmoothPlastic
+                            end
+                        end
+                    end
                 end
             elseif child:IsA("Folder") then
                 scanContainer(child)
             elseif child:IsA("BasePart") then
-                if child.Name:find("Multi") or child.Name:find("M5225626565") then
+                local cName = child.Name
+                if cName:find("Multi") or cName:find("M5225626565") then
                     child.CanCollide = false
-                    table.insert(targets, {model = child, part = child})
+                    targets[#targets + 1] = {model = child, part = child}
+                    child.Color = Color3.new(0, 0, 0)
+                    child.Material = Enum.Material.SmoothPlastic
                 end
             end
         end
@@ -98,91 +133,50 @@ local randomColors = {
     Color3.fromRGB(0, 255, 100)
 }
 
-local math_random = math.random
-local math_floor = math.floor
-local math_abs = math.abs
-local math_clamp = math.clamp
-local math_max = math.max
-
 local function spawnGlitchEffect(targetCenterPos, mainSize)
     local line = Instance.new("Frame")
     local vpSize = camera.ViewportSize
     local chosenColor = randomColors[math_random(1, #randomColors)]
     
     local width, height, posX, posY
-    local isTransparentBox = false
+    local randType = math_random(1, 4)
     
-    local isLine = (math_random(1, 2) == 1)
-    local isBox = (math_random(1, 2) == 1)
-    local isSquare = (math_random(1, 2) == 1)
-    
-    if isLine then
-        if math_random(1, 4) == 1 then
-            width = vpSize.X
-        else
-            width = math_random(80, math_floor(vpSize.X * 0.8))
-        end
+    if randType == 1 then
+        width = math_random(80, math_floor(vpSize.X * 0.5))
         height = 1
         posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
         posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
-        
         line.BackgroundColor3 = chosenColor
         line.BackgroundTransparency = 0.2
         line.BorderSizePixel = 0
-        
-    elseif isBox then
-        width = math_random(30, 400)
-        height = math_random(10, 150)
+    elseif randType == 2 then
+        width = math_random(30, 200)
+        height = math_random(10, 80)
         posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
         posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
-        
-        isTransparentBox = true
         line.BackgroundColor3 = Color3.new(0, 0, 0)
         line.BackgroundTransparency = 0.3
         line.BorderSizePixel = 0
-        
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = chosenColor
-        stroke.Thickness = 1.5
-        stroke.Parent = line
-        
-    elseif isSquare then
-        local boxSize = math_random(25, 65)
-        width = boxSize
-        height = boxSize
-        
-        local maxOffset = math_clamp(mainSize * 1.5, 100, 350)
-        local offsetX = math_random(-maxOffset, maxOffset)
-        local offsetY = math_random(-maxOffset, maxOffset)
-        
-        if math_abs(offsetX) < (mainSize / 2) then
-            offsetX = offsetX < 0 and -(mainSize / 2 + width) or (mainSize / 2)
-        end
-        if math_abs(offsetY) < (mainSize / 2) then
-            offsetY = offsetY < 0 and -(mainSize / 2 + height) or (mainSize / 2)
-        end
-        
-        posX = targetCenterPos.X + offsetX - (width / 2)
-        posY = targetCenterPos.Y + offsetY - (height / 2)
-        
-        isTransparentBox = true
-        line.BackgroundColor3 = Color3.new(0, 0, 0)
-        line.BackgroundTransparency = 0.3
-        line.BorderSizePixel = 0
-        
         local stroke = Instance.new("UIStroke")
         stroke.Color = chosenColor
         stroke.Thickness = 1.5
         stroke.Parent = line
     else
-        width = math_random(80, math_floor(vpSize.X * 0.8))
-        height = 1
-        posX = math_random(0, math_max(1, math_floor(vpSize.X - width)))
-        posY = math_random(0, math_max(1, math_floor(vpSize.Y - height)))
+        local boxSize = math_random(25, 45)
+        width, height = boxSize, boxSize
+        local maxOffset = math_clamp(mainSize * 1.5, 100, 250)
+        local offsetX = math_random(-maxOffset, maxOffset)
+        local offsetY = math_random(-maxOffset, maxOffset)
         
-        line.BackgroundColor3 = chosenColor
-        line.BackgroundTransparency = 0.2
+        posX = targetCenterPos.X + offsetX - (width / 2)
+        posY = targetCenterPos.Y + offsetY - (height / 2)
+        line.BackgroundColor3 = Color3.new(0, 0, 0)
+        line.BackgroundTransparency = 0.3
         line.BorderSizePixel = 0
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = chosenColor
+        stroke.Thickness = 1.5
+        stroke.Parent = line
     end
     
     line.Size = UDim2.new(0, width, 0, height)
@@ -190,28 +184,76 @@ local function spawnGlitchEffect(targetCenterPos, mainSize)
     line.Parent = screenGui
     
     task.spawn(function()
-        local duration = 10.0
         local elapsed = 0
-        while elapsed < duration and line and line.Parent do
+        while elapsed < 2.0 and line and line.Parent do
             local dt = RunService.RenderStepped:Wait()
             elapsed = elapsed + dt
-            if elapsed > 9.0 then
-                local fadeProgress = (elapsed - 9.0) / 1.0
-                if isTransparentBox then
-                    line.BackgroundTransparency = 0.3 + (0.7 * fadeProgress)
-                else
-                    line.BackgroundTransparency = 0.2 + (0.8 * fadeProgress)
-                end
+            if elapsed > 1.5 then
+                line.BackgroundTransparency = 0.3 + (0.7 * ((elapsed - 1.5) / 0.5))
             end
-            task.wait()
         end
-        if line then
-            line:Destroy()
-        end
+        if line then line:Destroy() end
     end)
 end
 
+local originalAppearances = {}
+local isBodyRedacted = false
+
+local function setBodyRedacted(redacted, char)
+    if isBodyRedacted == redacted then return end
+    isBodyRedacted = redacted
+    if not char then return end
+    
+    local descendants = char:GetDescendants()
+    for i = 1, #descendants do
+        local part = descendants[i]
+        if part:IsA("BasePart") then
+            if redacted then
+                if not originalAppearances[part] then
+                    originalAppearances[part] = {color = part.Color, material = part.Material, transparency = part.Transparency}
+                end
+                part.Color = Color3.new(0, 0, 0)
+                part.Material = Enum.Material.SmoothPlastic
+                part.Transparency = 0
+            else
+                local orig = originalAppearances[part]
+                if orig then
+                    part.Color = orig.color
+                    part.material = orig.material
+                    part.Transparency = orig.transparency
+                end
+            end
+        elseif part:IsA("Accessory") then
+            local handle = part:FindFirstChild("Handle")
+            if handle then
+                if redacted then
+                    if not originalAppearances[handle] then
+                        originalAppearances[handle] = {color = handle.Color, material = handle.Material, transparency = handle.Transparency}
+                    end
+                    handle.Color = Color3.new(0, 0, 0)
+                    handle.Material = Enum.Material.SmoothPlastic
+                    handle.Transparency = 0
+                else
+                    local orig = originalAppearances[handle]
+                    if orig then
+                        handle.Color = orig.color
+                        handle.material = orig.material
+                        handle.Transparency = orig.transparency
+                    end
+                end
+            end
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function()
+    originalAppearances = {}
+    isBodyRedacted = false
+end)
+
 local lastGlitchTick = 0
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
 local connection
 connection = RunService.RenderStepped:Connect(function()
@@ -221,10 +263,17 @@ connection = RunService.RenderStepped:Connect(function()
     end
 
     local targets = getTargetMonsters()
-    if #targets == 0 then
+    local playerChar = player.Character
+    local playerHrp = playerChar and playerChar:FindFirstChild("HumanoidRootPart")
+
+    if #targets == 0 or not playerHrp then
         mainSquare.Visible = false
-        for _, sqData in ipairs(rapidSquares) do
-            sqData.frame.Visible = false
+        secondarySquare.Visible = false
+        for i = 1, RAPID_COUNT do
+            rapidSquares[i].frame.Visible = false
+        end
+        if isBodyRedacted then
+            setBodyRedacted(false, playerChar)
         end
         return
     end
@@ -233,28 +282,39 @@ connection = RunService.RenderStepped:Connect(function()
     local closestDistance = math.huge
     local bestScreenPoint = nil
     local origin = camera.CFrame.Position
+    local monsterCanSeePlayer = false
 
-    for _, targetData in ipairs(targets) do
+    for i = 1, #targets do
+        local targetData = targets[i]
         local monster = targetData.model
         local targetPart = targetData.part
         
         if monster and monster.Parent and targetPart and targetPart.Parent then
-            targetPart.CanCollide = false
             local cf = targetPart.CFrame
-            local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
+            local distToPlayer = (cf.Position - playerHrp.Position).Magnitude
 
+            if distToPlayer <= 50 then
+                local monsterToPlayerDir = (playerHrp.Position - cf.Position)
+                local checkParams = RaycastParams.new()
+                checkParams.FilterType = Enum.RaycastFilterType.Exclude
+                checkParams.FilterDescendantsInstances = {monster, playerChar}
+                
+                if not Workspace:Raycast(cf.Position, monsterToPlayerDir, checkParams) then
+                    monsterCanSeePlayer = true
+                end
+            end
+
+            local screenPoint, onScreen = camera:WorldToViewportPoint(cf.Position)
             if onScreen then
                 local direction = (cf.Position - origin)
-                local raycastParams = RaycastParams.new()
-                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-                raycastParams.FilterDescendantsInstances = {player.Character, monster}
+                raycastParams.FilterDescendantsInstances = {playerChar, monster}
 
                 local hitValid = false
                 local currentOrigin = origin
                 local remainingDirection = direction
                 local blockedByWallTooClose = false
                 
-                for i = 1, 5 do
+                for r = 1, 3 do
                     local raycastResult = Workspace:Raycast(currentOrigin, remainingDirection, raycastParams)
                     if not raycastResult then
                         hitValid = true
@@ -262,12 +322,9 @@ connection = RunService.RenderStepped:Connect(function()
                     else
                         local hitPart = raycastResult.Instance
                         if hitPart and hitPart.Transparency <= 0.9 then
-                            -- Check if the wall blocking the view is within 4 studs of the entity/hitbox
-                            local distToHit = (raycastResult.Position - cf.Position).Magnitude
-                            if distToHit <= 4 then
+                            if (raycastResult.Position - cf.Position).Magnitude <= 4 then
                                 blockedByWallTooClose = true
                             end
-                            
                             hitValid = false
                             break
                         else
@@ -293,43 +350,75 @@ connection = RunService.RenderStepped:Connect(function()
         end
     end
 
+    local activeBoxesCount = 0
+
+    -- Multi-monster redaction box
     if closestTarget and bestScreenPoint then
+        activeBoxesCount = activeBoxesCount + 1
         local mainSize = math_clamp(10000 / closestDistance, 100, 1000)
 
         mainSquare.Size = UDim2.new(0, mainSize, 0, mainSize)
         mainSquare.Position = UDim2.new(0, bestScreenPoint.X - (mainSize / 2), 0, bestScreenPoint.Y - (mainSize / 2))
         mainSquare.Visible = true
 
-        local currentTime = tick()
-
-        for _, sqData in ipairs(rapidSquares) do
+        local currentTime = os_clock()
+        for i = 1, RAPID_COUNT do
+            local sqData = rapidSquares[i]
             if currentTime >= sqData.nextUpdate then
-                sqData.nextUpdate = currentTime + math_random(30, 100) / 1000
+                sqData.nextUpdate = currentTime + 0.05
                 sqData.frame.Size = UDim2.new(0, 20, 0, 20)
 
                 local minOffset = mainSize * 0.4
                 local maxOffset = mainSize * 1.4
-                local angle = math_random() * math.pi * 2
+                local angle = math_random() * 6.28318
                 local dist = math_random(math_floor(minOffset), math_floor(maxOffset))
 
-                local posX = bestScreenPoint.X + math.cos(angle) * dist - 10
-                local posY = bestScreenPoint.Y + math.sin(angle) * dist - 10
-
-                sqData.frame.Position = UDim2.new(0, posX, 0, posY)
+                sqData.frame.Position = UDim2.new(0, bestScreenPoint.X + math_cos(angle) * dist - 10, 0, bestScreenPoint.Y + math_sin(angle) * dist - 10)
                 sqData.frame.Visible = true
             end
         end
 
-        if currentTime - lastGlitchTick > 0.15 then
+        if currentTime - lastGlitchTick > 0.25 then
             lastGlitchTick = currentTime
-            for i = 1, math_random(2, 4) do
-                spawnGlitchEffect(bestScreenPoint, mainSize)
-            end
+            spawnGlitchEffect(bestScreenPoint, mainSize)
         end
     else
         mainSquare.Visible = false
-        for _, sqData in ipairs(rapidSquares) do
-            sqData.frame.Visible = false
+        for i = 1, RAPID_COUNT do
+            rapidSquares[i].frame.Visible = false
+        end
+    end
+
+    -- Player body third-person redaction box
+    if monsterCanSeePlayer then
+        setBodyRedacted(true, playerChar)
+        
+        if (camera.CFrame.Position - playerHrp.Position).Magnitude > 4 then
+            local charScreenPoint, charOnScreen = camera:WorldToViewportPoint(playerHrp.Position)
+            if charOnScreen then
+                activeBoxesCount = activeBoxesCount + 1
+                local charDist = (camera.CFrame.Position - playerHrp.Position).Magnitude
+                
+                local playerWidth = math_clamp(4000 / charDist, 60, 400)
+                local playerHeight = math_clamp(9000 / charDist, 100, 750)
+                
+                secondarySquare.Size = UDim2.new(0, playerWidth, 0, playerHeight)
+                secondarySquare.Position = UDim2.new(0, charScreenPoint.X - (playerWidth / 2), 0, charScreenPoint.Y - (playerHeight / 2))
+                secondarySquare.Visible = true
+            else
+                secondarySquare.Visible = false
+            end
+        else
+            secondarySquare.Visible = false
+        end
+    else
+        setBodyRedacted(false, playerChar)
+        secondarySquare.Visible = false
+    end
+
+    if activeBoxesCount == 0 then
+        for i = 1, RAPID_COUNT do
+            rapidSquares[i].frame.Visible = false
         end
     end
 end)
