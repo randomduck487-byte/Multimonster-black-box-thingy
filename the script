@@ -50,7 +50,7 @@ local redactedMonsters = {}
 local function setupMonsterPart(part)
     if not part:IsA("BasePart") then return end
     local pName = part.Name
-    -- STRICT CHECK: Only match names containing "Multi" or "multi"
+    -- STRICT CHECK: Only look for parts containing "Multi" or "multi"
     if pName:find("Multi") or pName:find("multi") then
         part.CanCollide = false
         if not redactedMonsters[part] then
@@ -66,30 +66,26 @@ local function setupMonsterPart(part)
     end
 end
 
-local currentRooms = Workspace:FindFirstChild("CurrentRooms")
-
-local function monitorContainer(container)
-    for _, desc in ipairs(container:GetDescendants()) do
-        setupMonsterPart(desc)
-    end
-    container.DescendantAdded:Connect(function(desc)
-        setupMonsterPart(desc)
-    end)
-end
+-- TARGETED DETECTION SYSTEM: Only listens inside CurrentRooms to prevent massive lag
+local currentRooms = Workspace:WaitForChild("CurrentRooms", 15)
 
 if currentRooms then
-    monitorContainer(currentRooms)
+    local function monitorRoom(room)
+        for _, desc in ipairs(room:GetDescendants()) do
+            setupMonsterPart(desc)
+        end
+        room.DescendantAdded:Connect(function(desc)
+            setupMonsterPart(desc)
+        end)
+    end
+
+    for _, room in ipairs(currentRooms:GetChildren()) do
+        monitorRoom(room)
+    end
+
     currentRooms.ChildAdded:Connect(function(room)
-        monitorContainer(room)
+        monitorRoom(room)
     end)
-end
-
-Workspace.DescendantAdded:Connect(function(desc)
-    setupMonsterPart(desc)
-end)
-
-for _, desc in ipairs(Workspace:GetDescendants()) do
-    setupMonsterPart(desc)
 end
 
 local randomColors = {
@@ -254,7 +250,8 @@ connection = RunService.RenderStepped:Connect(function()
         return
     end
 
-    if currentTime - lastUpdateCheck > 0.033 then
+    -- OPTIMIZATION: Throttled search/calculation interval set to 0.25 seconds (runs 4x/sec instead of every frame)
+    if currentTime - lastUpdateCheck > 0.25 then
         lastUpdateCheck = currentTime
         cachedClosestTarget = nil
         cachedBestScreenPoint = nil
