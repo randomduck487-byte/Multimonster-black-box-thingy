@@ -30,7 +30,7 @@ secondarySquare.BorderSizePixel = 0
 secondarySquare.Visible = false
 secondarySquare.Parent = screenGui
 
-local RAPID_COUNT = 12 -- Increased count for denser effects
+local RAPID_COUNT = 12
 local rapidSquares = {}
 for i = 1, RAPID_COUNT do
     local sq = Instance.new("Frame")
@@ -50,7 +50,8 @@ local redactedMonsters = {}
 local function setupMonsterPart(part)
     if not part:IsA("BasePart") then return end
     local pName = part.Name
-    if pName:find("Multi") or pName:find("M5225626565") then
+    -- STRICT CHECK: Only match names containing "Multi" or "multi"
+    if pName:find("Multi") or pName:find("multi") then
         part.CanCollide = false
         if not redactedMonsters[part] then
             redactedMonsters[part] = true
@@ -156,7 +157,6 @@ local function spawnGlitchEffect(targetCenterPos, mainSize)
     line.Position = UDim2.new(0, posX, 0, posY)
     line.Parent = screenGui
     
-    -- Increased lifetime (stays longer: 3.5 seconds total, slow fade out over last 1.5 seconds)
     task.spawn(function()
         local elapsed = 0
         while elapsed < 3.5 and line and line.Parent do
@@ -305,7 +305,6 @@ connection = RunService.RenderStepped:Connect(function()
 
         for i = 1, RAPID_COUNT do
             local sqData = rapidSquares[i]
-            -- Refreshed much more often (shorter cooldown per element)
             if currentTime >= sqData.nextUpdate then
                 sqData.nextUpdate = currentTime + 0.025
                 sqData.frame.Size = UDim2.new(0, 20, 0, 20)
@@ -320,7 +319,6 @@ connection = RunService.RenderStepped:Connect(function()
             end
         end
 
-        -- Spawns glitch background effects much more frequently
         if currentTime - lastGlitchTick > 0.1 then
             lastGlitchTick = currentTime
             spawnGlitchEffect(cachedBestScreenPoint, cachedMainSize)
