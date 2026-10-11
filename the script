@@ -1,19 +1,9 @@
--- Universal Glitch & Cleanup-Enabled Redaction Script (Works in Every Game)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
----------------------------------------------------------
--- ⚙️ UNIVERSAL CONFIGURATION (WORKS FOR ANY GAME)
----------------------------------------------------------
--- Change "Multi" to the name of the entity, boss, or part in the game you are playing.
--- Leave as "" (empty string) to automatically target any active model/part around you!
 local TARGET_NAME = "Multi"
----------------------------------------------------------
 
----------------------------------------------------------
--- 🧹 ROBUST CLEANUP FEATURE (PREVENTS LAG & STACKING)
----------------------------------------------------------
 local genv = getgenv and getgenv() or _G
 if genv.MultiRedactRunning then
     pcall(function() genv.MultiRedactRunning() end)
@@ -31,9 +21,6 @@ end
 
 local camera = Workspace.CurrentCamera or Workspace:WaitForChild("CurrentCamera")
 
----------------------------------------------------------
--- 🟢 1. DELTA HIDDEN UI INJECTION
----------------------------------------------------------
 local guiParent = nil
 pcall(function()
     if gethui then
@@ -54,7 +41,6 @@ if not guiParent then
     guiParent = Workspace
 end
 
--- Clean up any duplicate GUIs lingering from previous runs
 pcall(function()
     for _, v in ipairs(guiParent:GetChildren()) do
         if v.Name == "UniversalRedactGui" then
@@ -69,7 +55,6 @@ screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = guiParent
 
--- Main redaction box for Target (SOLID BLACK)
 local mainBox = Instance.new("Frame")
 mainBox.Name = "MainRedactBox"
 mainBox.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -78,7 +63,6 @@ mainBox.BorderSizePixel = 0
 mainBox.Visible = false
 mainBox.Parent = screenGui
 
--- Mini black boxes pool (14x14, anchored around target)
 local rapidBoxes = {}
 for i = 1, 35 do
     local sq = Instance.new("Frame")
@@ -93,7 +77,6 @@ for i = 1, 35 do
     table.insert(rapidBoxes, {frame = sq, nextTick = 0})
 end
 
--- Glitch lines pool (Full screen width, thickness 1, 5s linger, STRICT colors)
 local glitchLines = {}
 for i = 1, 120 do
     local line = Instance.new("Frame")
@@ -104,7 +87,6 @@ for i = 1, 120 do
     table.insert(glitchLines, {frame = line, expire = 0})
 end
 
--- Glitch boxes pool (Wide left-right, short up-down, 1px split borders, 5s linger)
 local glitchBoxes = {}
 for i = 1, 80 do
     local box = Instance.new("Frame")
@@ -137,9 +119,6 @@ for i = 1, 80 do
     })
 end
 
----------------------------------------------------------
--- 🌀 2. WALL/FLOOR IMMUNITY & 50% CORRUPTION LOGIC
----------------------------------------------------------
 local trackedTargetParts = {}
 local corruptedObjects = {}
 local activeAssetBoxes = {}
@@ -201,13 +180,11 @@ local function corruptObject(part, multiPos)
     corruptedObjects[part] = true
 
     pcall(function()
-        -- 🎲 EXACT 50% CHANCE TO CORRUPT THE OBJECT
         if math.random() <= 0.5 then
             local mode = math.random(1, 3)
             local shouldRotate = (mode == 1 or mode == 2)
             local shouldAddCensor = (mode == 1 or mode == 3)
 
-            -- 1. Proximity-scaled rotational distortion
             if shouldRotate then
                 local dist = (part.Position - multiPos).Magnitude
                 local intensity = 1 - (math.clamp(dist, 0, 45) / 45)
@@ -220,7 +197,6 @@ local function corruptObject(part, multiPos)
                 part.CFrame = part.CFrame * CFrame.Angles(math.rad(rx), math.rad(ry), math.rad(rz))
             end
 
-            -- 2. 2D Screen-space black censor box (1% to 100% random coverage)
             if shouldAddCensor then
                 local coverage = math.random(1, 100) / 100
                 local baseDimension = math.max(part.Size.X, part.Size.Y, part.Size.Z)
@@ -243,9 +219,6 @@ local function corruptObject(part, multiPos)
     end)
 end
 
----------------------------------------------------------
--- ⚡ 3. STRICT 45-STUD SPATIAL SCANNER
----------------------------------------------------------
 local activeScanner = task.spawn(function()
     while true do
         pcall(function()
@@ -273,15 +246,11 @@ local activeScanner = task.spawn(function()
     end
 end)
 
----------------------------------------------------------
--- 🚀 4. RENDER LOOP & OCCLUSION-AWARE UI TRACKING
----------------------------------------------------------
--- STRICT Line colors: ONLY Red, Green, Blue, and Purple
 local lineColors = {
-    Color3.fromRGB(255, 0, 0),   -- Red
-    Color3.fromRGB(0, 255, 0),   -- Green
-    Color3.fromRGB(0, 0, 255),   -- Blue
-    Color3.fromRGB(170, 0, 255)  -- Purple
+    Color3.fromRGB(255, 0, 0),
+    Color3.fromRGB(0, 255, 0),
+    Color3.fromRGB(0, 0, 255),
+    Color3.fromRGB(170, 0, 255)
 }
 
 local boxColors = {
@@ -294,6 +263,217 @@ local boxColors = {
 }
 
 local function spawnGlitchLine()
+    local now = os.clock()
+    for _, g in ipairs(glitchLines) do
+        if now > g.expire then
+            g.expire = now + 5.0
+            
+            local vp = camera.ViewportSize
+            local randomY = math.random(20, math.max(30, vp.Y - 20))
+
+            g.frame.Size = UDim2.new(0, vp.X, 0, 1)
+            g.frame.Position = UDim2.new(0, 0, 0, randomY)
+            g.frame.BackgroundColor3 = lineColors[math.random(1, #lineColors)]
+            g.frame.BackgroundTransparency = 0.15
+            g.frame.Visible = true
+
+            task.delay(5.0, function()
+                if os.clock() >= g.expire then
+                    g.frame.Visible = false
+                end
+            end)
+            break
+        end
+    end
+end
+
+local function spawnGlitchBox()
+    local now = os.clock()
+    for _, b in ipairs(glitchBoxes) do
+        if now >= b.expire then
+            b.expire = now + 5.0
+            
+            local vp = camera.ViewportSize
+            local boxW = math.random(160, 380)
+            local boxH = math.random(16, 32)
+            
+            local targetX = math.random(10, math.max(20, vp.X - boxW - 10))
+            local targetY = math.random(10, math.max(20, vp.Y - boxH - 10))
+
+            b.frame.Size = UDim2.new(0, boxW, 0, boxH)
+            b.frame.Position = UDim2.new(0, targetX, 0, targetY)
+
+            local c1 = math.random(1, #boxColors)
+            local c2 = math.random(1, #boxColors)
+            while c2 == c1 do
+                c2 = math.random(1, #boxColors)
+            end
+
+            b.top.BackgroundColor3 = boxColors[c1]
+            b.bottom.BackgroundColor3 = boxColors[c2]
+            b.frame.Visible = true
+
+            task.delay(5.0, function()
+                if os.clock() >= b.expire then
+                    b.frame.Visible = false
+                end
+            end)
+            break
+        end
+    end
+end
+
+local lastSpawnTick = 0
+
+local activeConnection = RunService.RenderStepped:Connect(function()
+    if not screenGui or not screenGui.Parent then return end
+
+    local char = player.Character
+    local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+    
+    if not root then
+        mainBox.Visible = false
+        return
+    end
+
+    local origin = camera.CFrame.Position
+
+    for i = #activeAssetBoxes, 1, -1 do
+        local entry = activeAssetBoxes[i]
+        local part = entry.part
+        local frame = entry.frame
+
+        if part and part.Parent then
+            local screenPt, onScreen = camera:WorldToViewportPoint(part.Position)
+            local camDist = (origin - part.Position).Magnitude
+
+            local canSee = onScreen and screenPt.Z > 0 and isVisibleFromCamera(part.Position, part)
+
+            if canSee and camDist < 200 then
+                local dynamicBoxSize = math.clamp((entry.baseSize * 700) / math.max(1, camDist), 10, 300)
+                frame.Size = UDim2.new(0, dynamicBoxSize, 0, dynamicBoxSize)
+                frame.Position = UDim2.new(0, screenPt.X - dynamicBoxSize/2, 0, screenPt.Y - dynamicBoxSize/2)
+                frame.Visible = true
+            else
+                frame.Visible = false
+            end
+        else
+            frame:Destroy()
+            table.remove(activeAssetBoxes, i)
+        end
+    end
+
+    local bestPart = nil
+    local bestScreenPt = Vector3.zero
+    local bestDist = math.huge
+    local isClose = false
+    local isLooking = false
+
+    for _, part in ipairs(trackedTargetParts) do
+        if part and part.Parent then
+            local pos = part.Position
+            local camDist = (origin - pos).Magnitude
+            local screenPt, onScreen = camera:WorldToViewportPoint(pos)
+
+            if camDist < 45 then
+                isClose = true
+            end
+
+            local canSeeMulti = onScreen and screenPt.Z > 0 and isVisibleFromCamera(pos, part)
+
+            if canSeeMulti then
+                isLooking = true
+            end
+
+            if (canSeeMulti) or camDist < 45 then
+                if not onScreen or screenPt.Z < 0 then
+                    local vp = camera.ViewportSize
+                    local clampedX = math.clamp(screenPt.X, 60, math.max(60, vp.X - 60))
+                    local clampedY = math.clamp(screenPt.Y, 60, math.max(60, vp.Y - 60))
+                    screenPt = Vector3.new(clampedX, clampedY, 0)
+                end
+
+                if camDist < bestDist then
+                    bestDist = camDist
+                    bestPart = part
+                    bestScreenPt = screenPt
+                end
+            end
+        end
+    end
+
+    local now = os.clock()
+
+    if bestPart and bestScreenPt ~= Vector3.zero and isLooking then
+        local mainSize = math.clamp(7000 / bestDist, 60, 350)
+
+        mainBox.Size = UDim2.new(0, mainSize, 0, mainSize)
+        mainBox.Position = UDim2.new(0, bestScreenPt.X - mainSize/2, 0, bestScreenPt.Y - mainSize/2)
+        mainBox.Visible = true
+
+        for _, sq in ipairs(rapidBoxes) do
+            if now >= sq.nextTick then
+                sq.nextTick = now + 0.08
+                if math.random() <= 0.4 then
+                    local boxDim = 14
+                    local distOffset = math.random(math.floor(mainSize * 0.2), math.floor(mainSize * 1.4))
+                    local angle = math.random() * 6.28318
+
+                    local targetX = bestScreenPt.X + math.cos(angle) * distOffset - (boxDim / 2)
+                    local targetY = bestScreenPt.Y + math.sin(angle) * distOffset - (boxDim / 2)
+
+                    sq.frame.Position = UDim2.new(0, targetX, 0, targetY)
+                    sq.frame.Visible = true
+
+                    task.delay(0.2, function()
+                        sq.frame.Visible = false
+                    end)
+                end
+            end
+        end
+    else
+        mainBox.Visible = false
+    end
+
+    if #trackedTargetParts > 0 then
+        local spawnInterval = 1.2
+        local lineChance = 0.20
+        local boxChance = 0.20
+
+        if isLooking and isClose then
+            spawnInterval = 0.35
+            lineChance = 0.45
+            boxChance = 0.45
+        elseif isLooking or isClose then
+            spawnInterval = 0.70
+            lineChance = 0.30
+            boxChance = 0.30
+        end
+
+        if now - lastSpawnTick > spawnInterval then
+            lastSpawnTick = now
+
+            if math.random() <= lineChance then
+                spawnGlitchLine()
+            end
+
+            if math.random() <= boxChance then
+                spawnGlitchBox()
+            end
+        end
+    end
+end)
+
+genv.MultiRedactRunning = function()
+    if activeConnection then activeConnection:Disconnect() end
+    if activeScanner then task.cancel(activeScanner) end
+    pcall(function() screenGui:Destroy() end)
+    for _, boxEntry in ipairs(activeAssetBoxes) do
+        pcall(function() boxEntry.frame:Destroy() end)
+    end
+    genv.MultiRedactRunning = nil
+end
+tchLine()
     local now = os.clock()
     for _, g in ipairs(glitchLines) do
         if now > g.expire then
