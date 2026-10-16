@@ -1,59 +1,73 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+
+local math_random = math.random
+local math_clamp = math.clamp
+local math_rad = math.rad
+local math_cos = math.cos
+local math_sin = math.sin
+local math_max = math.max
+local math_floor = math.floor
+local os_clock = os.clock
+local table_insert = table.insert
 
 local TARGET_NAME = "Multi"
+local AMBIENT_SOUND_NAMES = {"LordLord", "KingOfGod", "LaPeace"}
 
-local genv = getgenv and getgenv() or _G
-if genv.MultiRedactRunning then
-    pcall(function() genv.MultiRedactRunning() end)
-end
-
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+local DIALOGUE_POOL = {
+    "check again",
+    "i see all, you'll see nothing",
+    "everywhere you go, everywhere i am",
+    "this is fun, let's try another one",
+    "which one was your favourite?",
+    "predictable",
+    "having fun?",
+    "i remember you, expandable",
+    "remember me?"
+}
 
 local player = Players.LocalPlayer
-while not player do
-    task.wait()
-    player = Players.LocalPlayer
-end
+while not player do task.wait(0.1) player = Players.LocalPlayer end
 
-local camera = Workspace.CurrentCamera or Workspace:WaitForChild("CurrentCamera")
-
-local guiParent = nil
-pcall(function()
-    if gethui then
-        guiParent = gethui()
-    end
-end)
-if not guiParent then
-    pcall(function()
-        guiParent = game:GetService("CoreGui")
-    end)
-end
-if not guiParent then
-    pcall(function()
-        guiParent = player:WaitForChild("PlayerGui")
-    end)
-end
-if not guiParent then
-    guiParent = Workspace
-end
-
-pcall(function()
-    for _, v in ipairs(guiParent:GetChildren()) do
-        if v.Name == "UniversalRedactGui" then
-            v:Destroy()
-        end
-    end
-end)
+local camera = Workspace.CurrentCamera
+while not camera do task.wait(0.1) camera = Workspace.CurrentCamera end
 
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UniversalRedactGui"
+screenGui.Name = "DeltaUniversalRedactGui"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
-screenGui.Parent = guiParent
+
+local parentSuccess = false
+pcall(function()
+    if gethui then
+        screenGui.Parent = gethui()
+        parentSuccess = true
+    elseif syn and syn.protect_gui then
+        syn.protect_gui(screenGui)
+        screenGui.Parent = CoreGui
+        parentSuccess = true
+    elseif protectgui then
+        protectgui(screenGui)
+        screenGui.Parent = CoreGui
+        parentSuccess = true
+    elseif CoreGui then
+        screenGui.Parent = CoreGui
+        parentSuccess = true
+    end
+end)
+
+if not parentSuccess or not screenGui.Parent then
+    pcall(function()
+        screenGui.Parent = player:WaitForChild("PlayerGui")
+    end)
+end
+if not screenGui.Parent then
+    screenGui.Parent = Workspace
+end
 
 local mainBox = Instance.new("Frame")
 mainBox.Name = "MainRedactBox"
@@ -63,71 +77,79 @@ mainBox.BorderSizePixel = 0
 mainBox.Visible = false
 mainBox.Parent = screenGui
 
+local dialogueLabel = Instance.new("TextLabel")
+dialogueLabel.Name = "MultiDialogueLabel"
+dialogueLabel.BackgroundTransparency = 1
+dialogueLabel.Size = UDim2.new(1, 0, 0, 40)
+dialogueLabel.AnchorPoint = Vector2.new(0.5, 1)
+dialogueLabel.Position = UDim2.new(0.5, 0, 1, -100)
+
+pcall(function()
+    dialogueLabel.FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+end)
+if not dialogueLabel.FontFace or dialogueLabel.FontFace.Family == "" then
+    dialogueLabel.Font = Enum.Font.FredokaOne
+end
+
+dialogueLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+dialogueLabel.TextScaled = false
+dialogueLabel.TextSize = 28
+dialogueLabel.TextStrokeTransparency = 0.3
+dialogueLabel.Text = ""
+dialogueLabel.Visible = false
+dialogueLabel.Parent = screenGui
+
 local rapidBoxes = {}
-for i = 1, 35 do
+for i = 1, 25 do
     local sq = Instance.new("Frame")
-    sq.Name = "MiniBox_" .. i
     sq.BackgroundTransparency = 0
     sq.BackgroundColor3 = Color3.new(0, 0, 0)
     sq.BorderSizePixel = 0
     sq.Size = UDim2.new(0, 14, 0, 14)
     sq.Visible = false
     sq.Parent = screenGui
-
-    table.insert(rapidBoxes, {frame = sq, nextTick = 0})
+    table_insert(rapidBoxes, {frame = sq, nextTick = 0})
 end
 
 local glitchLines = {}
-for i = 1, 120 do
+for i = 1, 60 do
     local line = Instance.new("Frame")
-    line.Name = "GlitchLine_" .. i
     line.BorderSizePixel = 0
     line.Visible = false
     line.Parent = screenGui
-    table.insert(glitchLines, {frame = line, expire = 0})
+    table_insert(glitchLines, {frame = line, expire = 0})
 end
 
 local glitchBoxes = {}
-for i = 1, 80 do
+for i = 1, 40 do
     local box = Instance.new("Frame")
-    box.Name = "GlitchBox_" .. i
     box.BackgroundColor3 = Color3.new(0, 0, 0)
     box.BackgroundTransparency = 0.65
     box.BorderSizePixel = 0
     box.Visible = false
     box.Parent = screenGui
 
-    local topBorder = Instance.new("Frame")
-    topBorder.Name = "TopBorder"
-    topBorder.BorderSizePixel = 0
-    topBorder.Size = UDim2.new(1, 0, 0, 1)
-    topBorder.Position = UDim2.new(0, 0, 0, 0)
-    topBorder.Parent = box
+    local topB = Instance.new("Frame")
+    topB.BorderSizePixel = 0
+    topB.Size = UDim2.new(1, 0, 0, 1)
+    topB.Parent = box
 
-    local bottomBorder = Instance.new("Frame")
-    bottomBorder.Name = "BottomBorder"
-    bottomBorder.BorderSizePixel = 0
-    bottomBorder.Size = UDim2.new(1, 0, 0, 1)
-    bottomBorder.Position = UDim2.new(0, 0, 1, -1)
-    bottomBorder.Parent = box
+    local botB = Instance.new("Frame")
+    botB.BorderSizePixel = 0
+    botB.Size = UDim2.new(1, 0, 0, 1)
+    botB.Position = UDim2.new(0, 0, 1, -1)
+    botB.Parent = box
 
-    table.insert(glitchBoxes, {
-        frame = box, 
-        top = topBorder, 
-        bottom = bottomBorder, 
-        expire = 0
-    })
+    table_insert(glitchBoxes, {frame = box, top = topB, bottom = botB, expire = 0})
 end
 
 local trackedTargetParts = {}
 local corruptedObjects = {}
-local activeAssetBoxes = {}
 
 local function isTargetPart(part)
     if TARGET_NAME == "" then
         return part:IsA("BasePart") and part.Anchored and not part.Parent:IsA("Terrain")
     end
-
     local searchKey = TARGET_NAME:lower()
     if part.Name:lower():find(searchKey) then return true end
     local model = part:FindFirstAncestorOfClass("Model")
@@ -141,104 +163,264 @@ local function isWallFloorOrTerrain(part)
         return true
     end
     if part.Parent and part.Parent:IsA("Terrain") then return true end
-    if part.Size.Y < 3 and (part.Size.X > 30 or part.Size.Z > 30) then return true end
-    if (part.Size.X < 3 or part.Size.Z < 3) and part.Size.Y > 20 then return true end
     return false
 end
 
 local function isVisibleFromCamera(targetPos, ignorePart)
     local camPos = camera.CFrame.Position
     local direction = (targetPos - camPos)
-    
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     
     local ignoreList = {}
-    if player.Character then table.insert(ignoreList, player.Character) end
-    if ignorePart then table.insert(ignoreList, ignorePart) end
-    
+    if player.Character then table_insert(ignoreList, player.Character) end
+    if ignorePart then table_insert(ignoreList, ignorePart) end
     raycastParams.FilterDescendantsInstances = ignoreList
 
-    local result = Workspace:Raycast(camPos, direction, raycastParams)
+    local currentPos = camPos
+    local remainingDir = direction
     
-    if result then
-        if ignorePart and result.Instance:IsDescendantOf(ignorePart) then
+    for _ = 1, 5 do
+        local result = Workspace:Raycast(currentPos, remainingDir, raycastParams)
+        if not result then return true end
+        local hitPart = result.Instance
+        if hitPart then
+            if ignorePart and hitPart:IsDescendantOf(ignorePart) then return true end
+            
+            if hitPart.Transparency >= 0.1 and hitPart.Transparency <= 1.0 then
+                currentPos = result.Position + (remainingDir.Unit * 0.1)
+                remainingDir = direction - (currentPos - camPos)
+                table_insert(ignoreList, hitPart)
+                raycastParams.FilterDescendantsInstances = ignoreList
+            elseif hitPart.Transparency < 0.1 then
+                return false
+            else
+                currentPos = result.Position + (remainingDir.Unit * 0.1)
+                remainingDir = direction - (currentPos - camPos)
+                table_insert(ignoreList, hitPart)
+                raycastParams.FilterDescendantsInstances = ignoreList
+            end
+        else
             return true
         end
-        return (result.Position - targetPos).Magnitude < 3
     end
     return true
 end
 
-local function corruptObject(part, multiPos)
-    if corruptedObjects[part] or not part:IsA("BasePart") or not part.Anchored then return end
-    
-    if isTargetPart(part) then return end
-    if player.Character and part:IsDescendantOf(player.Character) then return end
-    if isWallFloorOrTerrain(part) then return end
-
-    corruptedObjects[part] = true
-
+local function isSoundCurrentlyPlaying(soundName)
+    local playing = false
     pcall(function()
-        if math.random() <= 0.5 then
-            local mode = math.random(1, 3)
-            local shouldRotate = (mode == 1 or mode == 2)
-            local shouldAddCensor = (mode == 1 or mode == 3)
-
-            if shouldRotate then
-                local dist = (part.Position - multiPos).Magnitude
-                local intensity = 1 - (math.clamp(dist, 0, 45) / 45)
-                
-                local maxDeg = 5 + (intensity * 85)
-                local rx = math.random(-maxDeg, maxDeg)
-                local ry = math.random(-maxDeg, maxDeg)
-                local rz = math.random(-maxDeg, maxDeg)
-                
-                part.CFrame = part.CFrame * CFrame.Angles(math.rad(rx), math.rad(ry), math.rad(rz))
+        local containers = {Workspace, SoundService, ReplicatedStorage}
+        for _, container in ipairs(containers) do
+            for _, desc in ipairs(container:GetDescendants()) do
+                if desc:IsA("Sound") and desc.IsPlaying and desc.Name == soundName then
+                    playing = true
+                    break
+                end
             end
+            if playing then break end
+        end
+    end)
+    return playing
+end
 
-            if shouldAddCensor then
-                local coverage = math.random(1, 100) / 100
-                local baseDimension = math.max(part.Size.X, part.Size.Y, part.Size.Z)
+local function isAnyAmbientPlaying()
+    return isSoundCurrentlyPlaying("LordLord") or isSoundCurrentlyPlaying("KingOfGod") or isSoundCurrentlyPlaying("LaPeace")
+end
 
-                local assetBox = Instance.new("Frame")
-                assetBox.Name = "AssetDynamicScreenBox"
-                assetBox.BackgroundColor3 = Color3.new(0, 0, 0)
-                assetBox.BackgroundTransparency = 0
-                assetBox.BorderSizePixel = 0
-                assetBox.Visible = false
-                assetBox.Parent = screenGui
+local function showDialogue(text, duration)
+    pcall(function()
+        dialogueLabel.Text = text
+        dialogueLabel.Visible = true
+        task.delay(duration or 3, function()
+            if dialogueLabel.Text == text then
+                dialogueLabel.Visible = false
+                dialogueLabel.Text = ""
+            end
+        end)
+    end)
+end
 
-                table.insert(activeAssetBoxes, {
-                    part = part,
-                    frame = assetBox,
-                    baseSize = baseDimension * coverage
-                })
+local hasMetMultiBefore = false
+local anyAmbientWasPlayingLast = false
+local activeDialogueRoutine = nil
+
+local function handleDialogueSystem()
+    local anyAmbientPlaying = isAnyAmbientPlaying()
+
+    if anyAmbientPlaying then
+        if not anyAmbientWasPlayingLast then
+            if activeDialogueRoutine then task.cancel(activeDialogueRoutine) end
+            activeDialogueRoutine = task.spawn(function()
+                if not hasMetMultiBefore then
+                    hasMetMultiBefore = true
+                    showDialogue("glad your paying attention", 3); task.wait(3.2)
+                    showDialogue("you'll never learn", 3); task.wait(3.2)
+                else
+                    showDialogue("glad your paying attention", 3); task.wait(3.2)
+                    showDialogue("don't fail this time", 3); task.wait(3.2)
+                end
+                while isAnyAmbientPlaying() do
+                    showDialogue(DIALOGUE_POOL[math_random(1, #DIALOGUE_POOL)], 3)
+                    task.wait(math_random(6, 10))
+                end
+                activeDialogueRoutine = nil
+            end)
+        elseif not activeDialogueRoutine then
+            activeDialogueRoutine = task.spawn(function()
+                while isAnyAmbientPlaying() do
+                    showDialogue(DIALOGUE_POOL[math_random(1, #DIALOGUE_POOL)], 3)
+                    task.wait(math_random(6, 10))
+                end
+                activeDialogueRoutine = nil
+            end)
+        end
+    else
+        if activeDialogueRoutine then task.cancel(activeDialogueRoutine); activeDialogueRoutine = nil end
+        dialogueLabel.Visible = false
+        dialogueLabel.Text = ""
+    end
+
+    anyAmbientWasPlayingLast = anyAmbientPlaying
+end
+
+local function corruptObjectsInRange(modeType)
+    pcall(function()
+        local char = player.Character
+        local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+        local playerPos = root and root.Position or camera.CFrame.Position
+
+        if modeType == "MultiProximity" then
+            for _, multiPart in ipairs(trackedTargetParts) do
+                if multiPart and multiPart.Parent then
+                    local mPos = multiPart.Position
+                    local mSize = multiPart.Size
+                    -- Strictly bounded within 45 studs on every side around Multi's hitbox
+                    local minBounds = mPos - (mSize / 2) - Vector3.new(45, 45, 45)
+                    local maxBounds = mPos + (mSize / 2) + Vector3.new(45, 45, 45)
+
+                    for _, p in ipairs(Workspace:GetDescendants()) do
+                        if p:IsA("BasePart") and p.Anchored and not corruptedObjects[p] and not isTargetPart(p) and not isWallFloorOrTerrain(p) then
+                            if not (char and p:IsDescendantOf(char)) then
+                                local pPos = p.Position
+                                if pPos.X >= minBounds.X and pPos.X <= maxBounds.X and
+                                   pPos.Y >= minBounds.Y and pPos.Y <= maxBounds.Y and
+                                   pPos.Z >= minBounds.Z and pPos.Z <= maxBounds.Z then
+                                    
+                                    -- Exactly 50% chance per object
+                                    if math_random() <= 0.5 then
+                                        corruptedObjects[p] = {cf = p.CFrame, box = nil}
+                                        local outcome = (math_random() <= 0.5) and 1 or 2
+
+                                        if outcome == 1 then
+                                            local deg = 15
+                                            p.CFrame = p.CFrame * CFrame.Angles(math_rad(math_random(-deg, deg)), math_rad(math_random(-deg, deg)), 0)
+                                        else
+                                            local assetBox = Instance.new("Frame")
+                                            assetBox.BackgroundColor3 = Color3.new(0, 0, 0)
+                                            assetBox.BackgroundTransparency = 0
+                                            assetBox.BorderSizePixel = 0
+                                            assetBox.Visible = false
+                                            assetBox.Parent = screenGui
+                                            corruptedObjects[p].box = assetBox
+                                            corruptedObjects[p].baseSize = math_max(p.Size.X, p.Size.Y, p.Size.Z) * 1.5
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            -- Ambient music playing without Multi present: slower candidate check (45 studs around player)
+            for _, p in ipairs(Workspace:GetDescendants()) do
+                if p:IsA("BasePart") and p.Anchored and not corruptedObjects[p] and not isTargetPart(p) and not isWallFloorOrTerrain(p) then
+                    if not (char and p:IsDescendantOf(char)) then
+                        if (p.Position - playerPos).Magnitude <= 45 then
+                            if math_random() <= 0.5 then
+                                corruptedObjects[p] = {cf = p.CFrame, box = nil}
+                                local outcome = (math_random() <= 0.5) and 1 or 2
+
+                                if outcome == 1 then
+                                    local deg = 15
+                                    p.CFrame = p.CFrame * CFrame.Angles(math_rad(math_random(-deg, deg)), math_rad(math_random(-deg, deg)), 0)
+                                else
+                                    local assetBox = Instance.new("Frame")
+                                    assetBox.BackgroundColor3 = Color3.new(0, 0, 0)
+                                    assetBox.BackgroundTransparency = 0
+                                    assetBox.BorderSizePixel = 0
+                                    assetBox.Visible = false
+                                    assetBox.Parent = screenGui
+                                    corruptedObjects[p].box = assetBox
+                                    corruptedObjects[p].baseSize = math_max(p.Size.X, p.Size.Y, p.Size.Z) * 1.5
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end)
 end
 
-local activeScanner = task.spawn(function()
+local function restoreCorruptedObjects()
+    for part, data in pairs(corruptedObjects) do
+        if part and part.Parent then pcall(function() part.CFrame = data.cf end) end
+        if data.box then pcall(function() data.box:Destroy() end) end
+    end
+    corruptedObjects = {}
+end
+
+task.spawn(function()
+    task.wait(1)
+    local lastCorruptTime = 0
+
     while true do
         pcall(function()
             trackedTargetParts = {}
             for _, desc in ipairs(Workspace:GetDescendants()) do
                 if desc:IsA("BasePart") and isTargetPart(desc) then
-                    table.insert(trackedTargetParts, desc)
+                    table_insert(trackedTargetParts, desc)
                 end
             end
 
-            if #trackedTargetParts > 0 then
-                for _, targetPart in ipairs(trackedTargetParts) do
-                    if targetPart and targetPart.Parent then
-                        local partsInRadius = Workspace:GetPartBoundsInRadius(targetPart.Position, 45)
-                        for _, part in ipairs(partsInRadius) do
-                            if part:IsA("BasePart") and not corruptedObjects[part] then
-                                corruptObject(part, targetPart.Position)
-                            end
+            handleDialogueSystem()
+
+            local hasMulti = (#trackedTargetParts > 0)
+            local audioActive = isAnyAmbientPlaying()
+
+            if hasMulti or audioActive then
+                local now = os_clock()
+                local minMultiDist = math.huge
+                if hasMulti then
+                    local char = player.Character
+                    local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+                    local pPos = root and root.Position or camera.CFrame.Position
+                    for _, mp in ipairs(trackedTargetParts) do
+                        if mp and mp.Parent then
+                            local d = (mp.Position - pPos).Magnitude
+                            if d < minMultiDist then minMultiDist = d end
                         end
                     end
+                end
+
+                if hasMulti and minMultiDist <= 45 then
+                    -- Normal smooth interval when Multi is active nearby
+                    if now - lastCorruptTime >= 1.2 then
+                        lastCorruptTime = now
+                        corruptObjectsInRange("MultiProximity")
+                    end
+                elseif audioActive then
+                    -- Much slower interval when only background music is playing (preventing chaos/lag)
+                    if now - lastCorruptTime >= 6.0 then
+                        lastCorruptTime = now
+                        corruptObjectsInRange("AmbientSlow")
+                    end
+                end
+            else
+                if next(corruptedObjects) ~= nil then
+                    restoreCorruptedObjects()
                 end
             end
         end)
@@ -246,78 +428,39 @@ local activeScanner = task.spawn(function()
     end
 end)
 
-local lineColors = {
-    Color3.fromRGB(255, 0, 0),
-    Color3.fromRGB(0, 255, 0),
-    Color3.fromRGB(0, 0, 255),
-    Color3.fromRGB(170, 0, 255)
-}
-
-local boxColors = {
-    Color3.fromRGB(255, 0, 0),
-    Color3.fromRGB(0, 255, 0),
-    Color3.fromRGB(0, 170, 255),
-    Color3.fromRGB(255, 0, 120),
-    Color3.fromRGB(170, 0, 255),
-    Color3.fromRGB(255, 255, 255)
-}
+local lineColors = {Color3.fromRGB(255, 0, 0), Color3.fromRGB(0, 255, 0), Color3.fromRGB(0, 0, 255), Color3.fromRGB(170, 0, 255)}
+local boxColors = {Color3.fromRGB(255, 0, 0), Color3.fromRGB(0, 255, 0), Color3.fromRGB(0, 170, 255), Color3.fromRGB(255, 0, 120)}
 
 local function spawnGlitchLine()
-    local now = os.clock()
+    local now = os_clock()
     for _, g in ipairs(glitchLines) do
         if now > g.expire then
-            g.expire = now + 5.0
-            
+            g.expire = now + 4.0
             local vp = camera.ViewportSize
-            local randomY = math.random(20, math.max(30, vp.Y - 20))
-
             g.frame.Size = UDim2.new(0, vp.X, 0, 1)
-            g.frame.Position = UDim2.new(0, 0, 0, randomY)
-            g.frame.BackgroundColor3 = lineColors[math.random(1, #lineColors)]
-            g.frame.BackgroundTransparency = 0.15
+            g.frame.Position = UDim2.new(0, 0, 0, math_random(20, math_max(30, vp.Y - 20)))
+            g.frame.BackgroundColor3 = lineColors[math_random(1, #lineColors)]
+            g.frame.BackgroundTransparency = 0.2
             g.frame.Visible = true
-
-            task.delay(5.0, function()
-                if os.clock() >= g.expire then
-                    g.frame.Visible = false
-                end
-            end)
+            task.delay(4.0, function() g.frame.Visible = false end)
             break
         end
     end
 end
 
 local function spawnGlitchBox()
-    local now = os.clock()
+    local now = os_clock()
     for _, b in ipairs(glitchBoxes) do
         if now >= b.expire then
-            b.expire = now + 5.0
-            
+            b.expire = now + 4.0
             local vp = camera.ViewportSize
-            local boxW = math.random(160, 380)
-            local boxH = math.random(16, 32)
-            
-            local targetX = math.random(10, math.max(20, vp.X - boxW - 10))
-            local targetY = math.random(10, math.max(20, vp.Y - boxH - 10))
-
-            b.frame.Size = UDim2.new(0, boxW, 0, boxH)
-            b.frame.Position = UDim2.new(0, targetX, 0, targetY)
-
-            local c1 = math.random(1, #boxColors)
-            local c2 = math.random(1, #boxColors)
-            while c2 == c1 do
-                c2 = math.random(1, #boxColors)
-            end
-
-            b.top.BackgroundColor3 = boxColors[c1]
-            b.bottom.BackgroundColor3 = boxColors[c2]
+            local bw, bh = math_random(150, 300), math_random(16, 28)
+            b.frame.Size = UDim2.new(0, bw, 0, bh)
+            b.frame.Position = UDim2.new(0, math_random(10, math_max(20, vp.X - bw - 10)), 0, math_random(10, math_max(20, vp.Y - bh - 10)))
+            b.top.BackgroundColor3 = boxColors[math_random(1, #boxColors)]
+            b.bottom.BackgroundColor3 = boxColors[math_random(1, #boxColors)]
             b.frame.Visible = true
-
-            task.delay(5.0, function()
-                if os.clock() >= b.expire then
-                    b.frame.Visible = false
-                end
-            end)
+            task.delay(4.0, function() b.frame.Visible = false end)
             break
         end
     end
@@ -325,109 +468,63 @@ end
 
 local lastSpawnTick = 0
 
-local activeConnection = RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function()
     if not screenGui or not screenGui.Parent then return end
-
-    local char = player.Character
-    local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
-    
-    if not root then
-        mainBox.Visible = false
-        return
-    end
 
     local origin = camera.CFrame.Position
 
-    for i = #activeAssetBoxes, 1, -1 do
-        local entry = activeAssetBoxes[i]
-        local part = entry.part
-        local frame = entry.frame
-
-        if part and part.Parent then
-            local screenPt, onScreen = camera:WorldToViewportPoint(part.Position)
-            local camDist = (origin - part.Position).Magnitude
-
-            local canSee = onScreen and screenPt.Z > 0 and isVisibleFromCamera(part.Position, part)
-
-            if canSee and camDist < 200 then
-                local dynamicBoxSize = math.clamp((entry.baseSize * 700) / math.max(1, camDist), 10, 300)
-                frame.Size = UDim2.new(0, dynamicBoxSize, 0, dynamicBoxSize)
-                frame.Position = UDim2.new(0, screenPt.X - dynamicBoxSize/2, 0, screenPt.Y - dynamicBoxSize/2)
-                frame.Visible = true
+    for part, data in pairs(corruptedObjects) do
+        if data.box and part and part.Parent then
+            local pt, onScreen = camera:WorldToViewportPoint(part.Position)
+            local dist = (origin - part.Position).Magnitude
+            if onScreen and pt.Z > 0 and dist < 300 and isVisibleFromCamera(part.Position, part) then
+                local sz = math_clamp(350 / math_max(1, dist) * (data.baseSize or 2), 15, 350)
+                data.box.Size = UDim2.new(0, sz, 0, sz)
+                data.box.Position = UDim2.new(0, pt.X - sz/2, 0, pt.Y - sz/2)
+                data.box.Visible = true
             else
-                frame.Visible = false
+                data.box.Visible = false
             end
-        else
-            frame:Destroy()
-            table.remove(activeAssetBoxes, i)
         end
     end
 
     local bestPart = nil
-    local bestScreenPt = Vector3.zero
+    local bestPt = Vector3.zero
     local bestDist = math.huge
-    local isClose = false
-    local isLooking = false
+    local looking = false
 
     for _, part in ipairs(trackedTargetParts) do
         if part and part.Parent then
             local pos = part.Position
-            local camDist = (origin - pos).Magnitude
-            local screenPt, onScreen = camera:WorldToViewportPoint(pos)
-
-            if camDist < 45 then
-                isClose = true
-            end
-
-            local canSeeMulti = onScreen and screenPt.Z > 0 and isVisibleFromCamera(pos, part)
-
-            if canSeeMulti then
-                isLooking = true
-            end
-
-            if (canSeeMulti) or camDist < 45 then
-                if not onScreen or screenPt.Z < 0 then
-                    local vp = camera.ViewportSize
-                    local clampedX = math.clamp(screenPt.X, 60, math.max(60, vp.X - 60))
-                    local clampedY = math.clamp(screenPt.Y, 60, math.max(60, vp.Y - 60))
-                    screenPt = Vector3.new(clampedX, clampedY, 0)
-                end
-
-                if camDist < bestDist then
-                    bestDist = camDist
+            local dist = (origin - pos).Magnitude
+            local pt, onScreen = camera:WorldToViewportPoint(pos)
+            if onScreen and pt.Z > 0 and isVisibleFromCamera(pos, part) then
+                looking = true
+                if dist < bestDist then
+                    bestDist = dist
                     bestPart = part
-                    bestScreenPt = screenPt
+                    bestPt = pt
                 end
             end
         end
     end
 
-    local now = os.clock()
-
-    if bestPart and bestScreenPt ~= Vector3.zero and isLooking then
-        local mainSize = math.clamp(7000 / bestDist, 60, 350)
-
+    local now = os_clock()
+    if bestPart and bestPt ~= Vector3.zero and looking then
+        local mainSize = math_clamp(3800 / bestDist, 45, 160)
         mainBox.Size = UDim2.new(0, mainSize, 0, mainSize)
-        mainBox.Position = UDim2.new(0, bestScreenPt.X - mainSize/2, 0, bestScreenPt.Y - mainSize/2)
+        mainBox.Position = UDim2.new(0, bestPt.X - mainSize/2, 0, bestPt.Y - mainSize/2)
         mainBox.Visible = true
 
         for _, sq in ipairs(rapidBoxes) do
             if now >= sq.nextTick then
-                sq.nextTick = now + 0.08
-                if math.random() <= 0.4 then
-                    local boxDim = 14
-                    local distOffset = math.random(math.floor(mainSize * 0.2), math.floor(mainSize * 1.4))
-                    local angle = math.random() * 6.28318
-
-                    local targetX = bestScreenPt.X + math.cos(angle) * distOffset - (boxDim / 2)
-                    local targetY = bestScreenPt.Y + math.sin(angle) * distOffset - (boxDim / 2)
-
-                    sq.frame.Position = UDim2.new(0, targetX, 0, targetY)
+                sq.nextTick = now + 0.1
+                if math_random() <= 0.3 then
+                    local offset = math_random(20, math_floor(mainSize * 0.7))
+                    local angle = math_random() * 6.28
+                    sq.frame.Position = UDim2.new(0, bestPt.X + math_cos(angle)*offset - 7, 0, bestPt.Y + math_sin(angle)*offset - 7)
                     sq.frame.Visible = true
-
-                    task.delay(0.2, function()
-                        sq.frame.Visible = false
-                    end)
+                    task.delay(0.15, function() sq.frame.Visible = false end)
                 end
             end
         end
@@ -435,257 +532,73 @@ local activeConnection = RunService.RenderStepped:Connect(function()
         mainBox.Visible = false
     end
 
-    if #trackedTargetParts > 0 then
-        local spawnInterval = 1.2
-        local lineChance = 0.20
-        local boxChance = 0.20
+    local hasMulti = (#trackedTargetParts > 0)
+    local audioActive = isAnyAmbientPlaying()
 
-        if isLooking and isClose then
-            spawnInterval = 0.35
-            lineChance = 0.45
-            boxChance = 0.45
-        elseif isLooking or isClose then
-            spawnInterval = 0.70
-            lineChance = 0.30
-            boxChance = 0.30
-        end
+    if hasMulti or audioActive then
+        local interval = 0.6
+        local chance = 0.5
 
-        if now - lastSpawnTick > spawnInterval then
-            lastSpawnTick = now
+        if bestPart then
+            local isClose = (bestDist <= 45)
+            local isLookingAtIt = looking
 
-            if math.random() <= lineChance then
-                spawnGlitchLine()
-            end
-
-            if math.random() <= boxChance then
-                spawnGlitchBox()
-            end
-        end
-    end
-end)
-
-genv.MultiRedactRunning = function()
-    if activeConnection then activeConnection:Disconnect() end
-    if activeScanner then task.cancel(activeScanner) end
-    pcall(function() screenGui:Destroy() end)
-    for _, boxEntry in ipairs(activeAssetBoxes) do
-        pcall(function() boxEntry.frame:Destroy() end)
-    end
-    genv.MultiRedactRunning = nil
-end
-tchLine()
-    local now = os.clock()
-    for _, g in ipairs(glitchLines) do
-        if now > g.expire then
-            g.expire = now + 5.0
-            
-            local vp = camera.ViewportSize
-            local randomY = math.random(20, math.max(30, vp.Y - 20))
-
-            g.frame.Size = UDim2.new(0, vp.X, 0, 1)
-            g.frame.Position = UDim2.new(0, 0, 0, randomY)
-            g.frame.BackgroundColor3 = lineColors[math.random(1, #lineColors)]
-            g.frame.BackgroundTransparency = 0.15
-            g.frame.Visible = true
-
-            task.delay(5.0, function()
-                if os.clock() >= g.expire then
-                    g.frame.Visible = false
-                end
-            end)
-            break
-        end
-    end
-end
-
-local function spawnGlitchBox()
-    local now = os.clock()
-    for _, b in ipairs(glitchBoxes) do
-        if now >= b.expire then
-            b.expire = now + 5.0
-            
-            local vp = camera.ViewportSize
-            local boxW = math.random(160, 380)
-            local boxH = math.random(16, 32)
-            
-            local targetX = math.random(10, math.max(20, vp.X - boxW - 10))
-            local targetY = math.random(10, math.max(20, vp.Y - boxH - 10))
-
-            b.frame.Size = UDim2.new(0, boxW, 0, boxH)
-            b.frame.Position = UDim2.new(0, targetX, 0, targetY)
-
-            local c1 = math.random(1, #boxColors)
-            local c2 = math.random(1, #boxColors)
-            while c2 == c1 do
-                c2 = math.random(1, #boxColors)
-            end
-
-            b.top.BackgroundColor3 = boxColors[c1]
-            b.bottom.BackgroundColor3 = boxColors[c2]
-            b.frame.Visible = true
-
-            task.delay(5.0, function()
-                if os.clock() >= b.expire then
-                    b.frame.Visible = false
-                end
-            end)
-            break
-        end
-    end
-end
-
-local lastSpawnTick = 0
-
-local activeConnection = RunService.RenderStepped:Connect(function()
-    if not screenGui or not screenGui.Parent then return end
-
-    local char = player.Character
-    local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
-    
-    if not root then
-        mainBox.Visible = false
-        return
-    end
-
-    local origin = camera.CFrame.Position
-
-    -- Update Asset Censor Boxes (Occlusion aware)
-    for i = #activeAssetBoxes, 1, -1 do
-        local entry = activeAssetBoxes[i]
-        local part = entry.part
-        local frame = entry.frame
-
-        if part and part.Parent then
-            local screenPt, onScreen = camera:WorldToViewportPoint(part.Position)
-            local camDist = (origin - part.Position).Magnitude
-
-            local canSee = onScreen and screenPt.Z > 0 and isVisibleFromCamera(part.Position, part)
-
-            if canSee and camDist < 200 then
-                local dynamicBoxSize = math.clamp((entry.baseSize * 700) / math.max(1, camDist), 10, 300)
-                frame.Size = UDim2.new(0, dynamicBoxSize, 0, dynamicBoxSize)
-                frame.Position = UDim2.new(0, screenPt.X - dynamicBoxSize/2, 0, screenPt.Y - dynamicBoxSize/2)
-                frame.Visible = true
+            if isClose and isLookingAtIt then
+                interval = 0.15
+                chance = 0.85
+            elseif isClose or isLookingAtIt then
+                interval = 0.6
+                chance = 0.5
             else
-                frame.Visible = false
+                interval = 1.4
+                chance = 0.25
             end
         else
-            frame:Destroy()
-            table.remove(activeAssetBoxes, i)
-        end
-    end
-
-    local bestPart = nil
-    local bestScreenPt = Vector3.zero
-    local bestDist = math.huge
-    local isClose = false
-    local isLooking = false
-
-    for _, part in ipairs(trackedTargetParts) do
-        if part and part.Parent then
-            local pos = part.Position
-            local camDist = (origin - pos).Magnitude
-            local screenPt, onScreen = camera:WorldToViewportPoint(pos)
-
-            if camDist < 45 then
-                isClose = true
-            end
-
-            local canSeeMulti = onScreen and screenPt.Z > 0 and isVisibleFromCamera(pos, part)
-
-            if canSeeMulti then
-                isLooking = true
-            end
-
-            if (canSeeMulti) or camDist < 45 then
-                if not onScreen or screenPt.Z < 0 then
-                    local vp = camera.ViewportSize
-                    local clampedX = math.clamp(screenPt.X, 60, math.max(60, vp.X - 60))
-                    local clampedY = math.clamp(screenPt.Y, 60, math.max(60, vp.Y - 60))
-                    screenPt = Vector3.new(clampedX, clampedY, 0)
-                end
-
-                if camDist < bestDist then
-                    bestDist = camDist
-                    bestPart = part
-                    bestScreenPt = screenPt
-                end
-            end
-        end
-    end
-
-    local now = os.clock()
-
-    if bestPart and bestScreenPt ~= Vector3.zero and isLooking then
-        local mainSize = math.clamp(7000 / bestDist, 60, 350)
-
-        mainBox.Size = UDim2.new(0, mainSize, 0, mainSize)
-        mainBox.Position = UDim2.new(0, bestScreenPt.X - mainSize/2, 0, bestScreenPt.Y - mainSize/2)
-        mainBox.Visible = true
-
-        for _, sq in ipairs(rapidBoxes) do
-            if now >= sq.nextTick then
-                sq.nextTick = now + 0.08
-                if math.random() <= 0.4 then
-                    local boxDim = 14
-                    local distOffset = math.random(math.floor(mainSize * 0.2), math.floor(mainSize * 1.4))
-                    local angle = math.random() * 6.28318
-
-                    local targetX = bestScreenPt.X + math.cos(angle) * distOffset - (boxDim / 2)
-                    local targetY = bestScreenPt.Y + math.sin(angle) * distOffset - (boxDim / 2)
-
-                    sq.frame.Position = UDim2.new(0, targetX, 0, targetY)
-                    sq.frame.Visible = true
-
-                    task.delay(0.2, function()
-                        sq.frame.Visible = false
-                    end)
-                end
-            end
-        end
-    else
-        mainBox.Visible = false
-    end
-
-    -- REDUCED-FREQUENCY GLITCH SPAWNING
-    if #trackedTargetParts > 0 then
-        local spawnInterval = 1.2
-        local lineChance = 0.20
-        local boxChance = 0.20
-
-        if isLooking and isClose then
-            spawnInterval = 0.35
-            lineChance = 0.45
-            boxChance = 0.45
-        elseif isLooking or isClose then
-            spawnInterval = 0.70
-            lineChance = 0.30
-            boxChance = 0.30
+            interval = 1.4
+            chance = 0.25
         end
 
-        if now - lastSpawnTick > spawnInterval then
+        if now - lastSpawnTick > interval then
             lastSpawnTick = now
-
-            if math.random() <= lineChance then
-                spawnGlitchLine()
-            end
-
-            if math.random() <= boxChance then
-                spawnGlitchBox()
-            end
+            if math_random() <= chance then spawnGlitchLine() end
+            if math_random() <= chance then spawnGlitchBox() end
         end
     end
 end)
 
----------------------------------------------------------
--- 🧹 ACTIVE CLEANUP HANDLER ASSIGNMENT
----------------------------------------------------------
-genv.MultiRedactRunning = function()
-    if activeConnection then activeConnection:Disconnect() end
-    if activeScanner then task.cancel(activeScanner) end
-    pcall(function() screenGui:Destroy() end)
-    for _, boxEntry in ipairs(activeAssetBoxes) do
-        pcall(function() boxEntry.frame:Destroy() end)
-    end
-    genv.MultiRedactRunning = nil
+local isDead = false
+
+local function triggerDeathSequence()
+    if isDead then return end
+    isDead = true
+
+    pcall(function()
+        dialogueLabel.Visible = false
+        mainBox.Size = UDim2.new(1, 0, 1, 0)
+        mainBox.Position = UDim2.new(0, 0, 0, 0)
+        mainBox.BackgroundColor3 = Color3.fromRGB(15, 0, 0)
+        mainBox.Visible = true
+
+        task.wait(0.5)
+        showDialogue("i remember you, expandable", 3)
+        task.wait(3.5)
+        showDialogue("remember me?", 3)
+        task.delay(3.5, function()
+            dialogueLabel.Visible = false
+            mainBox.Visible = false
+            isDead = false
+        end)
+    end)
 end
+
+local function monitorCharacter(char)
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    if humanoid then
+        humanoid.Died:Connect(function()
+            triggerDeathSequence()
+        end)
+    end
+end
+
+if player.Character then monitorCharacter(player.Character) end
+player.CharacterAdded:Connect(monitorCharacter)
